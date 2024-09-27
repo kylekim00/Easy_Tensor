@@ -9,5 +9,11 @@
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드8.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드9.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드10.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드10.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드11.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드12.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드13.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드14.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/슬라이드15.JPG?raw=true)
 
 Easy Tensor is a library that aims to get a boost by focusing on essential tasks for CUDA programming developers.
