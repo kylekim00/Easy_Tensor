@@ -3,13 +3,13 @@
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/2.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/3.JPG?raw=true)
 First, I'll explain about the fudamental Tensor struct of Cease Tensor. 
-- T : points the start of the data.\
-- dim : points start of the dimention array.\
-- stride : points start of the stride array.\
-- d_dim_stride : points start of device dim and stride array.\
-- num_dim : length of dimention and stride array.\
-- sizeTensor : length of whole Tensor\
-- device_type : tells which device is Tensor on.\
+- T : points the start of the data.
+- dim : points start of the dimention array.
+- stride : points start of the stride array.
+- d_dim_stride : points start of device dim and stride array.
+- num_dim : length of dimention and stride array.
+- sizeTensor : length of whole Tensor
+- device_type : tells which device is Tensor on.
 - isSub : tells if it's subTensor(Explanation later on.)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/4.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/5.JPG?raw=true)
