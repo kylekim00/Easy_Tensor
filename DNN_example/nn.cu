@@ -145,7 +145,7 @@ Tensor* CESoftmax_deriv(Tensor* d_der_O, Tensor*d_O, Tensor* d_Y){
 
 int main(){
     int batch_size = 16;
-    float learning_rate = 0.0001;
+    float learning_rate = 0.00002;
     int layer_dim[] = {784, 50, 30, 40, 10};
     int in_dim[] = {batch_size, 784};
 
@@ -216,13 +216,13 @@ int main(){
 
 
     //==============================TRAIN===========================================
-    for(int iter=0; iter < 1; iter++){//iteration
+    for(int iter=0; iter < 30; iter++){//iteration
 
         data_file = LoaderINIT("data_norm.bin");
         label_file = LoaderINIT("label.bin");
 
         double loss = 0;
-        for(int batch=0; batch < batch_size*3/batch_size;batch++){//batch
+        for(int batch=0; batch < 60000/batch_size;batch++){//batch
             d_input = copyTensor(d_input, LoaderNEXT(input, data_file));
             d_label = copyTensor(d_label, LoaderNEXT(label, label_file));//both label and d_label is written here.
 
@@ -250,7 +250,7 @@ int main(){
 /////////////////////////////////////////////////////////////////////////////////////////////////////
             for(int i = sizeof(d_der_W)/sizeof(Tensor*) - 1; i >=1; i--){   //3, 2, 1,
                 d_der_W[i] = matmul(d_der_W[i], copyTransposeTensor(d_A_t[i-1],d_A[i-1]), d_der_A[i]);
-                d_der_b[i] = rowcolwise_sum(d_der_b[i], d_A[i], 0);
+                d_der_b[i] = rowcolwise_sum(d_der_b[i], d_der_A[i], 0);
                 
                 d_der_A[i-1] = matmul(d_der_A[i-1], d_der_A[i], copyTransposeTensor(d_W_t[i], d_W[i]));
                 d_der_A[i-1] = elementWise_Tensor(d_der_A[i-1] ,d_der_A[i-1],'m', d_A[i-1]);//dReLU가 들어가야함. d_der_A[i] = d_A[i]==0 ? 0 : d_der_A[i];
@@ -280,8 +280,8 @@ int main(){
         // // infoTensor(d_der_W[3]);
         // printTensor(label);
 
-        printf("\nloss: %f\n", loss);
-        printTensor(O);
+        printf("\nloss: %f\n", loss/(60000/batch_size));
+        // printTensor(O);
 
         LoaderCLOSE(data_file);
         LoaderCLOSE(label_file);
