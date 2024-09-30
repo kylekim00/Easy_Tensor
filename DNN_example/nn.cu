@@ -212,7 +212,6 @@ int main(){
     //=============dataLoader========================
     FILE * data_file, *label_file;
     //===============================================
-        // freeTensor(printTensor((copyTensor(makeTensorbyShape(d_W[3], 0),d_W[3]))));
 
 
     //==============================TRAIN===========================================
@@ -237,14 +236,6 @@ int main(){
             d_O = softMax(d_O, d_A[sizeof(d_A)/sizeof(Tensor*)-1]);
             loss += CrossEntropyLoss(copyTensor(O, d_O), label);//cross entropy loss
             d_der_A[sizeof(d_der_A)/sizeof(Tensor*) - 1] = CESoftmax_deriv(d_der_A[sizeof(d_der_A)/sizeof(Tensor*) - 1], d_O, d_label);
-            
-            // d_der_W[3] = matmul(d_der_W[3], copyTransposeTensor(d_A_t[2], d_A[2]), d_der_A[3]);
-            // d_der_b[3] = rowcolwise_sum(d_der_b[3], d_A[3], 0);
-
-            // d_der_A[2] = matmul(d_der_A[2], d_der_A[3], copyTransposeTensor(d_W_t[3], d_W[3]));
-            
-            // d_der_A[2] = elementWise_Tensor(d_der_A[2], d_der_A[2], 'm', d_A[2]);
-            
 
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -263,55 +254,32 @@ int main(){
             print_progress(batch, 60000/batch_size);
 
             for(int i=0; i < sizeof(d_der_W)/sizeof(Tensor*); i++){
-                // freeTensor(printTensor(makeSubTensor((copyTensor(makeTensorbyShape(d_W[i], 0),d_W[i])),"8 0", "8 8")));
-                // freeTensor(printTensor(makeSubTensor(copyTensor(makeTensorbyShape(d_b[i], 0),d_b[i]), "0", "8")));
                 d_W[i] = elementWise_Tensor(d_W[i],d_W[i],'-',scalar_Tensor(d_der_W[i], '*',learning_rate));
                 d_b[i] = elementWise_Tensor(d_b[i],d_b[i],'-',scalar_Tensor(d_der_b[i], '*',learning_rate));
             }
         }
-        // printTensor(label);
-        // freeTensor(printTensor((copyTensor(makeTensorbyShape(d_A[sizeof(d_A)/sizeof(Tensor*)-1], 0),d_A[sizeof(d_A)/sizeof(Tensor*)-1]))));
-        // freeTensor(printTensor(makeSubTensor((copyTensor(makeTensorbyShape(d_A_t[2], 0),d_A_t[2])),"8 0", "8 8")));
-        // printTensor((copyTensor(makeTensorbyShape(d_A[3], 0),d_A[3])));
-
-        // freeTensor(printTensor(makeSubTensor((copyTensor(makeTensorbyShape(d_der_A[2], 0),d_der_A[2])),"8 0", "8 8")));
-
-        // printTensor((copyTensor(makeTensorbyShape(d_A[3], 0),d_A[3])));
-        // // infoTensor(d_der_W[3]);
-        // printTensor(label);
-
+        
         printf("\nloss: %f\n", loss/(60000/batch_size));
-        // printTensor(O);
 
         LoaderCLOSE(data_file);
         LoaderCLOSE(label_file);
         printf("\n");
     }
-        //     freeTensor(printTensor((copyTensor(makeTensorbyShape(d_A[0], 0),d_A[0]))));
-
-    
-    
-    
-
-    // freeTensor(printTensor(makeSubTensor(W[3], "0 0", "8 8")));
-
-    // // freeTensor(dW[1]);
-    // for(int i=0; i < sizeof(A)/sizeof(Tensor*); i++){
-    //     freeTensor(A[i]);
-    // }
-    
 
     //free Weights
     for(int i=0; i <sizeof(W)/sizeof(Tensor*);i++){
         freeTensor(W[i]);
         freeTensor(d_W[i]);
         freeTensor(d_der_W[i]);
+        freeTensor(d_W_t[i]);
 
         freeTensor(b[i]);
         freeTensor(d_b[i]);
         freeTensor(d_der_b[i]);
 
         freeTensor(d_A[i]);
+        freeTensor(d_der_A[i]);
+        freeTensor(d_A_t[i]);
     }
     
     
