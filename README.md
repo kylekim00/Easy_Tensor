@@ -1,8 +1,6 @@
 # Easy_Tensor
-Unzip ```open.zip``` file which you can download from dacon competition page into ```./data``` directory.
-
-- Hierarchy
-
+To run the example code, Unzip ```./DNN_example/data/data.zip```first.
+```nvcc easy_tensor_struct.cu ./nn.cu ``` to run.
 
 <hr/>
 
