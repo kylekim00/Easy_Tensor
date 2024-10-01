@@ -1,4 +1,56 @@
 # Easy_Tensor
+Unzip ```open.zip``` file which you can download from dacon competition page into ```./data``` directory.
+
+- Hierarchy
+
+```
+2024SWAICompetition
++-- data
+|   +-- open
+|   |   +-- test
+|   |   +-- test_emb
+|   |   +-- train
+|   |   +-- train_aug
+|   |   |   +-- 0
+|   |   |   +-- 1
+|   |   |   +-- 2
+|   |   |   +-- 3
+|   |   |   +-- 4
+|   |   |   +-- 5
+|   |   +-- train_aug_emb
+|   |   |   +-- 0
+|   |   |   +-- 1
+|   |   |   +-- 2
+|   |   |   +-- 3
+|   |   |   +-- 4
+|   |   |   +-- 5
+|   |   +-- train_emb
+|   |   +-- unlabeled_data
++-- ensemble
++-- history
++-- ...
+```
+
+<hr/>
+
+## Description
+
+- ```./data/```: Data Directory<br/>
+- ```./ensemble/```: Parameters for Ensembled Inference<br/>
+- ```./history/```: Recorded Histories While Training<br/>
+- ```./src/```: Source Files for Markdown<br/>
+- ```./submission/```: Results of Inference Session<br/>
+- ```./WeSpeaker_ResNet221/```: Embedding Network Directory<br/>
+- ```./audio_to_embedding.py```: Convert Every Audio Files to Embedding Vectors<br/>
+- ```./inference_multi_ensemble.py```: Make a New Inference File or Reproduce Previous Inference File<br/>
+- ```./main.py```: Train Network with New Parameter<br/>
+- ```./MainDataset.py```: Custom Dataset for Actual Training<br/>
+- ```./MixedAudioDataset.py```: Data Augmentation Session Before Training<br/>
+- ```./model.py```: Our Cosine-Similarity-Based Siamese Network<br/>
+- ```./pred_analysis.py```: Check the Distribution of Prediction for Submission<br/>
+- ```./test.py```: Calculate Each Metric Score of Every Parameter File<br/>
+- ```./utils.py```: Utility Functions for this Project<br/>
+- ```./config.yaml```: Configurations and Hyperparameters for Training
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/1.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/2.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/3.JPG?raw=true)
