@@ -1,6 +1,6 @@
 # Easy_Tensor
-To run the example code, Unzip ```./DNN_example/data/data.zip```first.
-```nvcc easy_tensor_struct.cu ./nn.cu ``` to run.
+To run the example code, Unzip ```./DNN_example/data/data.zip```first.<br/>
+```nvcc easy_tensor_struct.cu ./nn.cu``` to run.
 
 <hr/>
 
