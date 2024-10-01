@@ -2,15 +2,6 @@
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/1.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/2.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/3.JPG?raw=true)
-First, I'll explain about the fudamental Tensor struct of Cease Tensor. 
-- T : points the start of the data.
-- dim : points start of the dimention array.
-- stride : points start of the stride array.
-- d_dim_stride : points start of device dim and stride array.
-- num_dim : length of dimention and stride array.
-- sizeTensor : length of whole Tensor
-- device_type : tells which device is Tensor on.
-- isSub : tells if it's subTensor(Explanation later on.)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/4.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/5.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/6.JPG?raw=true)
@@ -39,8 +30,13 @@ First, I'll explain about the fudamental Tensor struct of Cease Tensor.
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/28.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/29.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/30.JPG?raw=true)
-
-
-
-
-Easy Tensor is a library that aims to get a boost by focusing on essential tasks for CUDA programming developers.
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/31.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/32.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/33.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/34.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/35.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/36.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/37.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/38.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/39.JPG?raw=true)
+![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/40.JPG?raw=true)
