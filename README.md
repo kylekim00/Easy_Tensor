@@ -3,54 +3,22 @@ Unzip ```open.zip``` file which you can download from dacon competition page int
 
 - Hierarchy
 
-```
-2024SWAICompetition
-+-- data
-|   +-- open
-|   |   +-- test
-|   |   +-- test_emb
-|   |   +-- train
-|   |   +-- train_aug
-|   |   |   +-- 0
-|   |   |   +-- 1
-|   |   |   +-- 2
-|   |   |   +-- 3
-|   |   |   +-- 4
-|   |   |   +-- 5
-|   |   +-- train_aug_emb
-|   |   |   +-- 0
-|   |   |   +-- 1
-|   |   |   +-- 2
-|   |   |   +-- 3
-|   |   |   +-- 4
-|   |   |   +-- 5
-|   |   +-- train_emb
-|   |   +-- unlabeled_data
-+-- ensemble
-+-- history
-+-- ...
-```
 
 <hr/>
 
 ## Description
 
-- ```./data/```: Data Directory<br/>
-- ```./ensemble/```: Parameters for Ensembled Inference<br/>
-- ```./history/```: Recorded Histories While Training<br/>
-- ```./src/```: Source Files for Markdown<br/>
-- ```./submission/```: Results of Inference Session<br/>
-- ```./WeSpeaker_ResNet221/```: Embedding Network Directory<br/>
-- ```./audio_to_embedding.py```: Convert Every Audio Files to Embedding Vectors<br/>
-- ```./inference_multi_ensemble.py```: Make a New Inference File or Reproduce Previous Inference File<br/>
-- ```./main.py```: Train Network with New Parameter<br/>
-- ```./MainDataset.py```: Custom Dataset for Actual Training<br/>
-- ```./MixedAudioDataset.py```: Data Augmentation Session Before Training<br/>
-- ```./model.py```: Our Cosine-Similarity-Based Siamese Network<br/>
-- ```./pred_analysis.py```: Check the Distribution of Prediction for Submission<br/>
-- ```./test.py```: Calculate Each Metric Score of Every Parameter File<br/>
-- ```./utils.py```: Utility Functions for this Project<br/>
-- ```./config.yaml```: Configurations and Hyperparameters for Training
+- ```./CAPSTONE/```: Presentation images<br/>
+- ```./DNN_example/data/MNIST/raw```: zip file for MNIST data<br/>
+- ```./DNN_example/data/data.zip```: zipped data binary file "data_norm.bin"(due to file size over 100MB, unzip when train.)<br/>
+- ```./DNN_example/data/label.bin```: label binary file<br/>
+- ```./DNN_example/weight```: blocks of normalized random weight<br/>
+- ```./DNN_example/dataLoader.cu```: example of dataloader using EasyTensor <br/>
+- ```./DNN_example/nn.cu```: Deep neural network main file <br/>
+- ```./DNN_example/parameter.ipynb```: file for initialization <br/>
+
+
+
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/1.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/2.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/3.JPG?raw=true)

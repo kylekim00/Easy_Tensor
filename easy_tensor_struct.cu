@@ -1259,11 +1259,11 @@ __global__ void softmax_(float* dst,float* T, int batch, int label_num){//inx는
 
 Tensor* softMax(Tensor* dst, Tensor* src){
     if(!src ||!dst){
-        printf("no Tensor.\n");
+        printf("softMax : no Tensor.\n");
         return NULL;
     }
     if(!dst->device_type != !src->device_type){
-        printf("Two Tensors ar in different device.\n");
+        printf("sortMax : Two Tensors are in different device.\n");
     }
 
     if(src->device_type){
@@ -1306,9 +1306,13 @@ __global__ void elementwise_sub_(float* dC, float* dA, float* dB, int len){
 __global__ void elementwise_mult_(float* dC, float* dA, float* dB, int len){
     int inx = blockDim.x * blockIdx.x + threadIdx.x;
     if(inx < len)
-        dC[inx] = dA[inx] + dB[inx];
+        dC[inx] = dA[inx] * dB[inx];
 }
-
+__global__ void elementwise_div_(float* dC, float* dA, float* dB, int len){
+    int inx = blockDim.x * blockIdx.x + threadIdx.x;
+    if(inx < len)
+        dC[inx] = dA[inx] / dB[inx];
+}
 __global__ void elementwise_mask_(float* dC, float* dA, float* dB, int len){
     int inx = blockDim.x * blockIdx.x + threadIdx.x;
     if(inx < len)
@@ -1318,21 +1322,21 @@ __global__ void elementwise_mask_(float* dC, float* dA, float* dB, int len){
 
 Tensor* elementWise_Tensor(Tensor* dC, Tensor* dA, char operand, Tensor* dB){ 
     if(!dC || !dA || !dB){
-        printf("no Tensor\n");
+        printf("elementWise_Tensor : no Tensor\n");
         return NULL;
     }
     if(dC->device_type != dB->device_type || dB->device_type != dA->device_type){
-        printf("Device type does not match\n");
+        printf("elementWise_Tensor : Device type does not match\n");
         return NULL;
     }
     
     if(dC->num_dim != dB->num_dim || dC->num_dim != dA->num_dim){
-        printf("Number of dim does not match.\n");
+        printf("elementWise_Tensor : Number of dim does not match.\n");
         return NULL;
     }
     for(int i=0; i < dC->num_dim; i++){
         if(dC->dim[i] != dB->dim[i] || dC->dim[i] != dA->dim[i]){
-            printf("dimension does not match.\n");
+            printf("elementWise_Tensor : dimension does not match.\n");
             return NULL;
         }
     }
@@ -1346,6 +1350,8 @@ Tensor* elementWise_Tensor(Tensor* dC, Tensor* dA, char operand, Tensor* dB){
             elementwise_sub_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
         else if(operand=='*')
             elementwise_mult_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
+        else if(operand=='/')
+            elementwise_div_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
         else if(operand=='M'||operand=='m')
             elementwise_mask_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
         else{
@@ -1366,6 +1372,10 @@ Tensor* elementWise_Tensor(Tensor* dC, Tensor* dA, char operand, Tensor* dB){
         else if(operand=='*'){
             for(int i=0; i < dC->sizeTensor; i++){
                 dC->T[i] = dA->T[i] * dB->T[i];
+            }
+        }else if(operand == '/'){
+            for(int i=0; i < dC->sizeTensor; i++){
+                dC->T[i] = dA->T[i] / dB->T[i];
             }
         }else if(operand=='M' || operand=='m'){
             for(int i=0; i < dC->sizeTensor; i++){
@@ -1405,46 +1415,56 @@ __global__ void colwise_sum_(float* dst, float* src, int row, int col){// 모든
 
 Tensor* rowcolwise_sum(Tensor*dst, Tensor*src, char axis){
     if(!dst|| !src){
-        printf("no Tensor.\n");
+        printf("rowcolwise_sum : no Tensor.\n");
         return NULL;
     }
     if(dst->device_type != src->device_type){
-        printf("Tensors on different device.\n");
+        printf("rowcolwise_sum : Tensors on different device.\n");
         return NULL;
     }
     if(dst->isSub || src->isSub){
-        printf("This function can not have subTensor.\n");
+        printf("rowcolwise_sum : This function can not have subTensor.\n");
     }
     if(dst->device_type){
         cudaSetDevice(dst->device_type - 1);
         int s_tile_SIZE = tile_SIZE * tile_SIZE;
         if(axis == 0){//rowwise
             if(src->dim[src->num_dim-1] != dst->sizeTensor){
-                printf("row length and size of a source must have same length.\n");
+                printf("rowcolwise_sum : row length and size of dst must have same length.\n");
                 return NULL;
             }
             rowwise_sum_<<< (dst->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dst->T, src->T, src->dim[src->num_dim - 2], dst->sizeTensor);
         }else if(axis == 1){
             if(src->dim[src->num_dim-2] != dst->sizeTensor){
-                printf("col length and size of a source must have same length.\n");
+                printf("rowcolwise_sum : col length and size of dst must have same length.\n");
                 return NULL;
             }
             colwise_sum_<<< (dst->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dst->T, src->T, dst->sizeTensor, src->dim[src->num_dim-1]);
         }
     }else{
-        // if(axis == 0){
-        //     for(int i=0; i < src->dim[src->num_dim-2];i++){
-        //         for(int j=0; j < src->dim[src->num_dim-1];j++){
-        //             dst->T[j] = src->T[i *src->dim[src->num_dim-1]+ j];
-        //         }
-        //     }
-        // }else if(axis==1){
-        //     for(int i=0; i < src->dim[src->num_dim-2];i++){
-        //         for(int j=0; j < src->dim[src->num_dim-1];j++){
-        //             dst->T[i] = src->T[i *src->dim[src->num_dim-1]+ j];
-        //         }
-        //     }
-        // }
+        if(axis == 0){
+            if(src->dim[src->num_dim-1] != dst->sizeTensor){
+                printf("rowcolwise_sum : row length and size of dst must have same length.\n");
+                return NULL;
+            }
+            for(int j=0; j < src->dim[src->num_dim-1];j++){
+                dst->T[j] = 0;
+                for(int i=0; i < src->dim[src->num_dim-2];i++){
+                    dst->T[j] += src->T[i *src->dim[src->num_dim-1]+ j];
+                }
+            }
+        }else if(axis==1){
+            if(src->dim[src->num_dim-2] != dst->sizeTensor){
+                printf("rowcolwise_sum : col length and size of dst must have same length.\n");
+                return NULL;
+            }
+            for(int i=0; i < src->dim[src->num_dim-2];i++){
+                dst->T[i] = 0;
+                for(int j=0; j < src->dim[src->num_dim-1];j++){
+                    dst->T[i] += src->T[i *src->dim[src->num_dim-1]+ j];
+                }
+            }
+        }
     }
     return dst;
 }
@@ -1467,7 +1487,7 @@ __global__ void scalar_Tensor_mult_(float *T, float scalar, int len){
         T[inx] = T[inx] * scalar;
     }
 }
-Tensor* scalar_Tensor(Tensor*dst,char operand ,float scalar){
+Tensor* scalar_Tensor(Tensor*dst, char operand ,float scalar){
     if(!dst){
         printf("no tensor\n");
         return NULL;
@@ -1481,12 +1501,71 @@ Tensor* scalar_Tensor(Tensor*dst,char operand ,float scalar){
             scalar_Tensor_sub_<<< (dst->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dst->T, scalar, dst->sizeTensor);
         }else if(operand == '*'){
             scalar_Tensor_mult_<<< (dst->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dst->T, scalar, dst->sizeTensor);
-        }else if(operand == '/'){
-            //
         }else{
-            printf("not an appropriate operand\n");
+            printf("scalar_Tensor : not an appropriate operand\n");
         }
 
+    }else{
+        int* tmp_Inx = (int*)malloc(sizeof(int) * dst->num_dim);//=
+        for(int i=0; i < dst->num_dim; i++){
+            tmp_Inx[i] = 0;
+        }
+        int inx;
+        if(operand == '+'){           
+            while(tmp_Inx[0] < dst->dim[0]){
+                inx = 0;
+                for(int i=0; i < dst->num_dim; i++){
+                    inx += tmp_Inx[i]*dst->stride[i];
+                }
+
+                dst->T[inx] += scalar;
+
+                tmp_Inx[dst->num_dim - 1]++;
+                for(int i= dst->num_dim - 1; i > 0; i--){
+                    if(tmp_Inx[i] >= dst->dim[i]){
+                        tmp_Inx[i-1]++;
+                        tmp_Inx[i] = 0;
+                    }
+                }
+            }
+        }else if(operand == '-'){
+            while(tmp_Inx[0] < dst->dim[0]){
+                inx = 0;
+                for(int i=0; i < dst->num_dim; i++){
+                    inx += tmp_Inx[i]*dst->stride[i];
+                }
+
+                dst->T[inx] = scalar - dst->T[inx];
+
+                tmp_Inx[dst->num_dim - 1]++;
+                for(int i= dst->num_dim - 1; i > 0; i--){
+                    if(tmp_Inx[i] >= dst->dim[i]){
+                        tmp_Inx[i-1]++;
+                        tmp_Inx[i] = 0;
+                    }
+                }
+            }
+        }else if(operand == '*'){
+            while(tmp_Inx[0] < dst->dim[0]){
+                inx = 0;
+                for(int i=0; i < dst->num_dim; i++){
+                    inx += tmp_Inx[i]*dst->stride[i];
+                }
+
+                dst->T[inx] *= scalar;
+
+                tmp_Inx[dst->num_dim - 1]++;
+                for(int i= dst->num_dim - 1; i > 0; i--){
+                    if(tmp_Inx[i] >= dst->dim[i]){
+                        tmp_Inx[i-1]++;
+                        tmp_Inx[i] = 0;
+                    }
+                }
+            }
+        }else{
+            printf("scalar_Tensor : not an appropriate operand\n");
+        }
+        free(tmp_Inx);//=
     }
     return dst;
 }
