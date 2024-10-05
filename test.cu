@@ -1,59 +1,102 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include"easy_tensor.h"
+
 Tensor* dummyTensor(Tensor *ten){
-    for(int i=0; i < ten->dim[0] * ten->stride[0]; i++){
-        float dm = i;
-        ten->T[i] = dm;
+    for(int i=0; i < ten->sizeTensor; i++){
+        ten->T[i] = i%10;
     }
     return ten;
 }
 
-int main(){
-    int dim[] = {5, 4, 2, 3};
-    Tensor* A = makeTensor(dim, 4, 0);
-    A = dummyTensor(A);
-    int trans_dim[] = {2, 3, 4, 5};
-    Tensor* At = makeTensor(trans_dim, 4, 0);
-    
-    Tensor*dA = copyTensor(makeTensorbyShape(A, 1), A);
 
-    Tensor*dAt = makeTensorbyShape(At, 1);
 
-    int shape[] = {2, 3, 1, 0};
+// __global__ void normalize_(float* input, float* output, int layer_size/*row x col*/,int layer_num/*num_of_matrix*/, float epsilon) {
+//     int idx = blockIdx.x * blockDim.x + threadIdx.x;// compute each layer
+//     if (idx < layer_num) {
+//         float mean = 0.0f;
+//         float variance = 0.0f;
+        
+//         for (int i = 0; i < layer_size; i++) {
+//             mean += input[idx * layer_size + i];
+//         }
+//         mean /= layer_size;
 
-    dAt = copyReshapeTensor(dAt, dA, shape);
-    At = copyTensor(At, dAt);
+//         for (int i = 0; i < layer_size; i++) {
+//             variance += (input[idx * layer_size + i] - mean) * (input[idx * layer_size + i] - mean);
+//         }
+        
+//         variance /= layer_size;
+        
+//         for(int i=0; i < layer_size; i++)
+//             output[idx * layer_size + i] = (input[idx * layer_size + i] - mean) / sqrtf(variance + epsilon);
 
-    int sp[] = {0, 1, 1, 1};
-    int sub_dim[] = {2, 2, 2, 3};
-    Tensor* subdAt = makeSubTensor(dAt, sp, sub_dim, 4);
-    for(int i=0; i < 4; i++){
-        shape[i] = i;
+//     }
+// }
+
+
+// Tensor* normalize(Tensor* dst, Tensor* src){
+//     if(!dst||!src){
+//         printf("no Tensor.\n");
+//         return NULL;
+//     }
+
+//     if(dst->num_dim != src->num_dim){
+//         printf("two tensor has different shape.\n");
+//         return NULL;
+//     }
+
+//     normalize_<<<((dst->sizeTensor/dst->stride[dst->num_dim - 2] + tile_SIZE - 1)/tile_SIZE), tile_SIZE>>>(src->T, dst->T, dst->stride[dst->num_dim - 2], dst->sizeTensor/dst->stride[dst->num_dim - 2], 1e-06);
+
+//     return NULL;
+// }
+
+int accuracy_CPU(Tensor* O, Tensor* Y){
+    if(!O || !Y){
+        printf("no Tensor\n");
+        return -1;
     }
-    printTensor(copyTensor(makeTensorbyShape(subdAt, 0),copyReshapeTensor(makeTensorbyShape(subdAt, 1), subdAt, shape)));
-    printTensor(At);
+    if(O->device_type||Y->device_type){
+        printf("CPU ONLY\n");
+        return -1;
+    }
+    if(O->num_dim !=2 || Y->num_dim != 1){
+        printf("not an appropriate shape.\n");
+        return -1;
+    }
+    if(O->dim[0] != Y->dim[0]){ //batch 비교
+        printf("batch size does not match.\n");
+        return -1;
+    }
+    int acc = 0;
+    for(int i=0; i < O->dim[0]; i++){
+        int max_inx = 0;
+        for(int j=1; j < O->dim[1]; j++){
+            if (O->T[i * O->stride[0] + j] > O->T[i * O->stride[0] + max_inx]){
+                max_inx = j;
+            }
 
+        }
+        if(max_inx == Y->T[i]){
+            acc++;
+        }
+    }
+    return acc;
+}
 
-    
+int main(){
+    // Tensor* O = dummyTensor(makeTensor("4, 10", 0));
+    // Tensor* Y = makeTensor("4", 0);
+    // Y->T[0] = 0;
+    // Y->T[1] = 7;
+    // Y->T[2] = 9;
+    // Y->T[3] = 9;
+    // O->T[0] = 100;
+    // printTensor(O);
+    // printf("%d\n",accuracy_CPU(O, Y));
+    Tensor* A = dummyTensor(makeTensor("3 5 2", 0));
+    Tensor* subA = makeSubTensor(A, "1 0 0", "5 1");
+    printTensor(A);
+    printTensor(subA);
 
-    // Tensor* dA = copyTensor(makeTensorbyShape(A, 1), A);
-    // Tensor* dAt = makeTensorbyShape(At, 1);
-
-    // copyReshapeTensor(dAt, dA, resh);
-    // copyTensor(At, dAt);
-    // printTensor(At);
-
-    // int sp[] = {0, 0, 2};//batch, numToken, Q
-    // int sub_Dim[] = { 2, 2};
-    // Tensor* subA = makeSubTensor(A, sp, sub_Dim, 2);
-    // printTensor(subA);
-    // freeTensor(subA);
-    // sp[2] = 4;
-    
-    // subA = makelightcopysubTensor(A, sp, sub_Dim, 2);
-    // printTensor(subA);
-    // freeTensor(subA);
-
-    freeTensor(A);
 }

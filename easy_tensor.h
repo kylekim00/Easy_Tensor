@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <cuda_runtime.h>
 
-#define tile_SIZE 4
+#define tile_SIZE 16
 #define MAX_NUM_DIM 30
 
 typedef struct Tensor{

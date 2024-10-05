@@ -21,6 +21,38 @@ void print_progress(int count, int max) {
 
     fflush(stdout);
 }
+int accuracy_CPU(Tensor* O, Tensor* Y){
+    if(!O || !Y){
+        printf("no Tensor\n");
+        return -1;
+    }
+    if(O->device_type||Y->device_type){
+        printf("CPU ONLY\n");
+        return -1;
+    }
+    if(O->num_dim !=2 || Y->num_dim != 1){
+        printf("not an appropriate shape.\n");
+        return -1;
+    }
+    if(O->dim[0] != Y->dim[0]){ //batch 비교
+        printf("batch size does not match.\n");
+        return -1;
+    }
+    int acc = 0;
+    for(int i=0; i < O->dim[0]; i++){
+        int max_inx = 0;
+        for(int j=1; j < O->dim[1]; j++){
+            if (O->T[i * O->stride[0] + j] > O->T[i * O->stride[0] + max_inx]){
+                max_inx = j;
+            }
+
+        }
+        if(max_inx == Y->T[i]){
+            acc++;
+        }
+    }
+    return acc;
+}
 Tensor* copyTensorfromFILE(Tensor* dst, const char* file_name){
     char f_name[50] = "./weight/";
     int len = strlen(f_name);
@@ -147,7 +179,7 @@ int main(){
     int batch_size = 16;
     float learning_rate = 0.00002;
     int layer_dim[] = {784, 50, 30, 40, 10};
-    int in_dim[] = {batch_size, 784};
+    int in_dim[] = {batch_size, layer_dim[0]};
 
     //==========input allocation========================
     Tensor* input = mallocTensor(in_dim, 2, 0);
@@ -221,6 +253,7 @@ int main(){
         label_file = LoaderINIT("label.bin");
 
         double loss = 0;
+        int accuracy = 0;
         for(int batch=0; batch < 60000/batch_size;batch++){//batch
             d_input = copyTensor(d_input, LoaderNEXT(input, data_file));
             d_label = copyTensor(d_label, LoaderNEXT(label, label_file));//both label and d_label is written here.
@@ -233,40 +266,46 @@ int main(){
                 d_A[i] = matmul_bias(d_A[i], d_A[i-1], d_W[i], d_b[i], 0);
             }
 
+            //loss
             d_O = softMax(d_O, d_A[sizeof(d_A)/sizeof(Tensor*)-1]);
             loss += CrossEntropyLoss(copyTensor(O, d_O), label);//cross entropy loss
-            d_der_A[sizeof(d_der_A)/sizeof(Tensor*) - 1] = CESoftmax_deriv(d_der_A[sizeof(d_der_A)/sizeof(Tensor*) - 1], d_O, d_label);
 
+            //backward pass
+            if(batch < 50000/batch_size){
+                d_der_A[sizeof(d_der_A)/sizeof(Tensor*) - 1] = CESoftmax_deriv(d_der_A[sizeof(d_der_A)/sizeof(Tensor*) - 1], d_O, d_label);
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-            for(int i = sizeof(d_der_W)/sizeof(Tensor*) - 1; i >=1; i--){   //3, 2, 1,
-                d_der_W[i] = matmul(d_der_W[i], copyTransposeTensor(d_A_t[i-1],d_A[i-1]), d_der_A[i]);
-                d_der_b[i] = rowcolwise_sum(d_der_b[i], d_der_A[i], 0);
+                for(int i = sizeof(d_der_W)/sizeof(Tensor*) - 1; i >=1; i--){   //3, 2, 1,
+                    d_der_W[i] = matmul(d_der_W[i], copyTransposeTensor(d_A_t[i-1],d_A[i-1]), d_der_A[i]);
+                    d_der_b[i] = rowcolwise_sum(d_der_b[i], d_der_A[i], 0);
+                    
+                    d_der_A[i-1] = matmul(d_der_A[i-1], d_der_A[i], copyTransposeTensor(d_W_t[i], d_W[i]));
+                    d_der_A[i-1] = elementWise_Tensor(d_der_A[i-1] ,d_der_A[i-1],'m', d_A[i-1]);//dReLU가 들어가야함. d_der_A[i] = d_A[i]==0 ? 0 : d_der_A[i];
+                }
                 
-                d_der_A[i-1] = matmul(d_der_A[i-1], d_der_A[i], copyTransposeTensor(d_W_t[i], d_W[i]));
-                d_der_A[i-1] = elementWise_Tensor(d_der_A[i-1] ,d_der_A[i-1],'m', d_A[i-1]);//dReLU가 들어가야함. d_der_A[i] = d_A[i]==0 ? 0 : d_der_A[i];
-            }
-            
-            d_der_W[0] = matmul(d_der_W[0], copyTransposeTensor(d_input_t,d_input), d_der_A[0]);
-            d_der_b[0] = rowcolwise_sum(d_der_b[0], d_A[0], 0);
+                //update
+                d_der_W[0] = matmul(d_der_W[0], copyTransposeTensor(d_input_t,d_input), d_der_A[0]);
+                d_der_b[0] = rowcolwise_sum(d_der_b[0], d_A[0], 0);
 
+                for(int i=0; i < sizeof(d_der_W)/sizeof(Tensor*); i++){
+                    d_W[i] = elementWise_Tensor(d_W[i],d_W[i],'-',scalar_Tensor(d_der_W[i], '*',learning_rate));
+                    d_b[i] = elementWise_Tensor(d_b[i],d_b[i],'-',scalar_Tensor(d_der_b[i], '*',learning_rate));
+                }
+            }else{//iter
+                accuracy += accuracy_CPU(O, label);
+            }
             
             print_progress(batch, 60000/batch_size);
 
-            for(int i=0; i < sizeof(d_der_W)/sizeof(Tensor*); i++){
-                d_W[i] = elementWise_Tensor(d_W[i],d_W[i],'-',scalar_Tensor(d_der_W[i], '*',learning_rate));
-                d_b[i] = elementWise_Tensor(d_b[i],d_b[i],'-',scalar_Tensor(d_der_b[i], '*',learning_rate));
-            }
         }
         
-        printf("\nloss: %f\n", loss/(60000/batch_size));
+        printf("\nvalid acc: %d/10000 | %.2f%%\nloss: %f\n",accuracy, (float)accuracy/100,loss/(60000/batch_size));
 
         LoaderCLOSE(data_file);
         LoaderCLOSE(label_file);
         printf("\n");
     }
 
-    //free Weights
+    //free Weights///////////////////////////////////////////////////////////////////////////////////////
     for(int i=0; i <sizeof(W)/sizeof(Tensor*);i++){
         freeTensor(W[i]);
         freeTensor(d_W[i]);
