@@ -63,6 +63,7 @@ Tensor* rowcolwise_sum(Tensor*dst, Tensor*src, char axis);
 
 Tensor* scalar_Tensor(Tensor*dst,char operand ,float scalar);
 
+Tensor* normalize(Tensor*dst, Tensor* src);
 
 #endif // TENSOR_H
 

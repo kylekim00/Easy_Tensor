@@ -1319,46 +1319,6 @@ __global__ void elementwise_mask_(float* dC, float* dA, float* dB, int len){
         dC[inx] = dB[inx]? dA[inx] : 0;
 }
 
-__global__ void elementwise_broadcast_add_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little){
-    int inx = blockDim.x * blockIdx.x + threadIdx.x;
-    int inx_little = inx % len_little;
-    if(inx < len_Big)
-        dC[inx] = dBig[inx] + dLittle[inx_little];
-}
-__global__ void elementwise_broadcast_mult_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little){
-    int inx = blockDim.x * blockIdx.x + threadIdx.x;
-    int inx_little = inx % len_little;
-    if(inx < len_Big)
-        dC[inx] = dBig[inx] * dLittle[inx_little];
-}
-
-__global__ void elementwise_broadcast_sub_Abig_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little){
-    int inx = blockDim.x * blockIdx.x + threadIdx.x;
-    int inx_little = inx % len_little;
-    if(inx < len_Big)
-        dC[inx] = dBig[inx] - dLittle[inx_little];
-}
-
-__global__ void elementwise_broadcast_sub_Bbig_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little){
-    int inx = blockDim.x * blockIdx.x + threadIdx.x;
-    int inx_little = inx % len_little;
-    if(inx < len_Big)
-        dC[inx] = dLittle[inx_little] - dBig[inx];
-}
-
-__global__ void elementwise_broadcast_div_Abig_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little){
-    int inx = blockDim.x * blockIdx.x + threadIdx.x;
-    int inx_little = inx % len_little;
-    if(inx < len_Big)
-        dC[inx] = dBig[inx] / dLittle[inx_little];
-}
-
-__global__ void elementwise_broadcast_div_Bbig_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little){
-    int inx = blockDim.x * blockIdx.x + threadIdx.x;
-    int inx_little = inx % len_little;
-    if(inx < len_Big)
-        dC[inx] = dLittle[inx_little] / dBig[inx];
-}
 
 Tensor* elementWise_Tensor(Tensor* dC, Tensor* dA, char operand, Tensor* dB){ 
     if(!dC || !dA || !dB){
@@ -1370,170 +1330,65 @@ Tensor* elementWise_Tensor(Tensor* dC, Tensor* dA, char operand, Tensor* dB){
         return NULL;
     }
     
-    if(dC->num_dim != dB->num_dim && dC->num_dim != dA->num_dim){
+    if(dC->num_dim != dB->num_dim || dC->num_dim != dA->num_dim){
         printf("elementWise_Tensor : Number of dim does not match.\n");
         return NULL;
     }
-
-    // Handle broadcasting if num_dim is different between dA and dB
-    if(dA->num_dim != dB->num_dim){
-        Tensor* bigTensor, *littleTensor;
-
-        if(dA->num_dim > dB->num_dim){
-            bigTensor = dA;
-            littleTensor = dB;
-        }else{
-            bigTensor = dB;
-            littleTensor = dA;
-        }
-        int cont = bigTensor->num_dim - littleTensor->num_dim;
-        for(int i=0; i < littleTensor->num_dim; i++){
-            if(bigTensor->dim[i+cont] != littleTensor->dim[i]){
-                printf("elementWise_Tensor : dimension does not match.\n");
-                return NULL;
-            }
-        }
-
-        // GPU computation case
-        if(dC->device_type){
-            cudaSetDevice(dC->device_type - 1);
-            int s_tile_SIZE = tile_SIZE * tile_SIZE;
-
-            // Handle different operators on GPU
-            if(operand == '+'){                                                                             //elementwise_broadcast_add_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little)
-                elementwise_broadcast_add_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, bigTensor->T, littleTensor->T, bigTensor->sizeTensor, littleTensor->sizeTensor);
-            }
-            else if(operand == '-'){
-                if(bigTensor == dA)
-                    elementwise_broadcast_sub_Abig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, bigTensor->T, littleTensor->T, bigTensor->sizeTensor, littleTensor->sizeTensor);
-                else{
-                    elementwise_broadcast_sub_Bbig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, bigTensor->T, littleTensor->T, bigTensor->sizeTensor, littleTensor->sizeTensor);
-                }
-            }
-            else if(operand == '*'){
-                elementwise_broadcast_mult_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, bigTensor->T, littleTensor->T, bigTensor->sizeTensor, littleTensor->sizeTensor);
-            }
-            else if(operand == '/'){
-                if(bigTensor == dA)
-                    elementwise_broadcast_div_Abig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, bigTensor->T, littleTensor->T, bigTensor->sizeTensor, littleTensor->sizeTensor);
-                else{
-                    elementwise_broadcast_div_Bbig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, bigTensor->T, littleTensor->T, bigTensor->sizeTensor, littleTensor->sizeTensor);
-                }
-            }
-            else if(operand == 'M' || operand == 'm'){
-                elementwise_mask_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
-            } else {
-                printf("elementWise_Tensor : not an appropriate operand\n");
-                return NULL;
-            }
-
-        } else {  // CPU computation case
-            int i_little = 0;
-            if(operand == '+'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    i_little = i % littleTensor->sizeTensor;
-                    dC->T[i] = bigTensor->T[i] + littleTensor->T[i_little];
-                }
-            }
-            else if(operand == '-'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    i_little = i % littleTensor->sizeTensor;
-                    dC->T[i] = bigTensor->T[i] - littleTensor->T[i_little];
-                }
-            }
-            else if(operand == '*'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    i_little = i % littleTensor->sizeTensor;
-                    dC->T[i] = bigTensor->T[i] * littleTensor->T[i_little];
-                }
-            }
-            else if(operand == '/'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    i_little = i % littleTensor->sizeTensor;
-                    dC->T[i] = bigTensor->T[i] / littleTensor->T[i_little];
-                }
-            }
-            else if(operand == 'M' || operand == 'm'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    i_little = i % littleTensor->sizeTensor;
-                    dC->T[i] = littleTensor->T[i_little] ? bigTensor->T[i] : 0;
-                }
-            }
-            else {
-                printf("elementWise_Tensor : not an appropriate operand\n");
-                return NULL;
-            }
-        }
-
-    } else {
-        // Dimensions match, proceed with element-wise operations
-        for(int i=0; i < dC->num_dim; i++){
-            if(dC->dim[i] != dB->dim[i] || dC->dim[i] != dA->dim[i]){
-                printf("elementWise_Tensor : dimension does not match.\n");
-                return NULL;
-            }
-        }
-
-        // GPU computation case
-        if(dC->device_type){
-            cudaSetDevice(dC->device_type - 1);
-            int s_tile_SIZE = tile_SIZE * tile_SIZE;
-
-            if(operand == '+'){
-                elementwise_add_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
-            }
-            else if(operand == '-'){
-                elementwise_sub_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
-            }
-            else if(operand == '*'){
-                elementwise_mult_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
-            }
-            else if(operand == '/'){
-                elementwise_div_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
-            }
-            else if(operand == 'M' || operand == 'm'){
-                elementwise_mask_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
-            } else {
-                printf("elementWise_Tensor : not an appropriate operand\n");
-                return NULL;
-            }
-
-        } else {  // CPU computation case
-            if(operand == '+'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    dC->T[i] = dA->T[i] + dB->T[i];
-                }
-            }
-            else if(operand == '-'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    dC->T[i] = dA->T[i] - dB->T[i];
-                }
-            }
-            else if(operand == '*'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    dC->T[i] = dA->T[i] * dB->T[i];
-                }
-            }
-            else if(operand == '/'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    dC->T[i] = dA->T[i] / dB->T[i];
-                }
-            }
-            else if(operand == 'M' || operand == 'm'){
-                for(int i=0; i < dC->sizeTensor; i++){
-                    dC->T[i] = dB->T[i] ? dA->T[i] : 0;
-                }
-            }
-            else {
-                printf("elementWise_Tensor : not an appropriate operand\n");
-                return NULL;
-            }
+    for(int i=0; i < dC->num_dim; i++){
+        if(dC->dim[i] != dB->dim[i] || dC->dim[i] != dA->dim[i]){
+            printf("elementWise_Tensor : dimension does not match.\n");
+            return NULL;
         }
     }
 
+    if(dC->device_type){
+        cudaSetDevice(dC->device_type - 1);
+        int s_tile_SIZE = tile_SIZE * tile_SIZE;//no special drawbacks in parallel sequence 임
+        if(operand =='+')
+            elementwise_add_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
+        else if(operand=='-')
+            elementwise_sub_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
+        else if(operand=='*')
+            elementwise_mult_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
+        else if(operand=='/')
+            elementwise_div_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
+        else if(operand=='M'||operand=='m')
+            elementwise_mask_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dC->T, dA->T, dB->T, dC->sizeTensor);
+        else{
+            printf("not an appropriate operand\n");
+            return NULL;
+        }
+    }else{
+        if(operand =='+'){
+            for(int i=0; i < dC->sizeTensor; i++){
+                dC->T[i] = dA->T[i] + dB->T[i];
+            }
+        }
+        else if(operand=='-'){
+            for(int i=0; i < dC->sizeTensor; i++){
+                dC->T[i] = dA->T[i] - dB->T[i];
+            }
+        }
+        else if(operand=='*'){
+            for(int i=0; i < dC->sizeTensor; i++){
+                dC->T[i] = dA->T[i] * dB->T[i];
+            }
+        }else if(operand == '/'){
+            for(int i=0; i < dC->sizeTensor; i++){
+                dC->T[i] = dA->T[i] / dB->T[i];
+            }
+        }else if(operand=='M' || operand=='m'){
+            for(int i=0; i < dC->sizeTensor; i++){
+                dC->T[i] = (dB->T[i])? dA->T[i] : 0;
+            }
+        }
+        else{
+            printf("not an appropriate operand\n");
+            return NULL;
+        }
+    }
     return dC;
 }
-
 
 __global__ void rowwise_sum_(float* dst, float* src, int row, int col){// 모든 row를 다 더한다. ->col 의 개수만큼의 inx
     int inx = blockDim.x * blockIdx.x + threadIdx.x;
