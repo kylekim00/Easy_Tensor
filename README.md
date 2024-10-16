@@ -1,6 +1,6 @@
 # Easy_Tensor_Model
 
-### auto backpropagation in progress
+### Auto Backpropagation in progress
 
 <hr/>
 
