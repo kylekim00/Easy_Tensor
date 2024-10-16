@@ -9,6 +9,7 @@
 
 typedef struct Tensor{
     float *T;           //명심해라. 이건 배열이 아니라 시작주소이다.
+    float *dT;
     int *dim;           //dim. stride와는 다르다. subTensor에서는 완전 다르다. 
     int *stride;        //다음 차원 얼마나 건너뛰어야하는지 알려줌.
     int *d_dim_stride;  //GPU에 정보제공. 만약 CPU에 있으면 NULL.
