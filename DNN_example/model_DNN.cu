@@ -1,18 +1,7 @@
 #include<iostream>
 #include<stdlib.h>
-#include"easy_tensor.h"
-
-#define FORWARD 0
-#define BACKWARD 1
-
-#define MODEL_OPSNUM_RE 30
-
-#define OPERATION_MATMUL 0
-
-#define OPERATION_UP_IDX_A 0
-#define OPERATION_UP_IDX_B 1
-
-#define OPERATION_DOWN_IDX_C 0
+#include "./../easy_tensor.h"
+#include<string.h>
 
 using namespace std;
 

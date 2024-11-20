@@ -1,0 +1,23 @@
+Auto Grad를 하기 위해서는 결국 Operation을 객체화해서 차례대로 미분하는 것이 가장 효율적인 방법이지만 그래프로의 접근도 항상 생각은 하고 있자. 왜냐하면 나중에 TensorRT에서 무엇을 하는지 탐구를 하기 위해서는 다양한 연산들을 통합을 해야하기 때문이다. 
+솔직히 이제는 C++ 같은 객체지향 언어로 만드는 것이 훨씬 더 효율적일 것 같지만 일단 이것부터 완성을 해보자. 
+
+
+
+Model
+- 모든 Operation을 담는 struct
+- Operation의 개수와 Operation을 연산 순서대로 담고 있다. 
+- makeModel() : 모델을 만드는 함수
+- freeModel() : 모델을 free하는 함수
+
+
+
+Operation
+- Operation의 종류, upstream Tensor, downstream Tensor들을 담는 struct
+- makeOperation(int operation_code, int upstream_num, int downstream_num);
+    operation을 만들어주는 함수
+- freeOperation()
+    operation의 메모리를 해제해주는 함수
+
+Tensor
+- 실제 값을 저장하고 그에 대한 미분값을 저장하는 struct를 넣는다.
+

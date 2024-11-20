@@ -46,7 +46,7 @@ int main(){
     printTensor(copyTensor(C, elementWise_Tensor(dC, dB,'*',dA)));
 
 
-
+    
     Tensor* (*dd)(Tensor*);
     dd = printTensor;
     dd(A);

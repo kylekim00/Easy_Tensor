@@ -56,6 +56,7 @@ Tensor *mallocTensor(int *dim, int num_dim, int device_type){
         cudaMemcpy(ten->d_dim_stride, ten->dim, 2 * num_dim * sizeof(int), cudaMemcpyHostToDevice);
     }
     ten->isSub = 0;
+    ten->dT = NULL;
     return ten;
 }
 
@@ -338,6 +339,13 @@ void freeTensor(Tensor *ten){
             if (err != cudaSuccess) {
                 fprintf(stderr, "freeTensor CUDA Error: %s\n", cudaGetErrorString(err));
             }
+            if(ten->dT){
+                cudaError_t err = cudaFree(ten->dT);
+                // printf(" 이거냐 \n");
+                if (err != cudaSuccess) {
+                    fprintf(stderr, "freeTensor CUDA Error: %s\n", cudaGetErrorString(err));
+                }
+            }
         }else{
             free(ten->T);
         }
@@ -468,9 +476,11 @@ Tensor* copyTensor(Tensor *dst, Tensor *src){
     if(!dst->device_type && !src->device_type){ //CPU to CPU
         for(int i=0; i < dst->dim[0]*dst->stride[0]; i++)
             dst->T[i] = src->T[i];
+
     }
 
     else if(dst->device_type && src->device_type){
+        // cudaSetDevice(dst->device_type -1);
         cudaMemcpy(dst->T, src->T, dst->sizeTensor * sizeof(float), cudaMemcpyDeviceToDevice);
     }
     else if(dst->device_type){
@@ -993,7 +1003,7 @@ Tensor* matmul(Tensor* dC, Tensor* dA, Tensor* dB){
         printf("matmul : dC num_dim has to have same num_dim as bigger Tensor.\n");
         return NULL;
     }
-
+    ///////////////////////////////////////////////////////////////////////////////
 
     if(bigTensor->num_dim ==2){
         cudaSetDevice(bigTensor->device_type-1);
@@ -1044,12 +1054,10 @@ Tensor* matmul(Tensor* dC, Tensor* dA, Tensor* dB){
         }
         
     }
-    
+    ///////////////////////////////////////////////////////////////////////////////
     return dC;
     
     //if [5, 1, 3, 4, 5] x [4, 1, 5, 4]
-    
-
 }
 
 
@@ -1316,7 +1324,7 @@ __global__ void elementwise_div_(float* dC, float* dA, float* dB, int len){
 __global__ void elementwise_mask_(float* dC, float* dA, float* dB, int len){
     int inx = blockDim.x * blockIdx.x + threadIdx.x;
     if(inx < len)
-        dC[inx] = dB[inx]? dA[inx] : 0;
+        dC[inx] = (dB[inx]>0)? dA[inx] : 0;
 }
 
 __global__ void elementwise_broadcast_add_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little){
@@ -1456,7 +1464,7 @@ Tensor* elementWise_Tensor(Tensor* dC, Tensor* dA, char operand, Tensor* dB){
             else if(operand == 'M' || operand == 'm'){
                 for(int i=0; i < dC->sizeTensor; i++){
                     i_little = i % littleTensor->sizeTensor;
-                    dC->T[i] = littleTensor->T[i_little] ? bigTensor->T[i] : 0;
+                    dC->T[i] = (littleTensor->T[i_little]>0) ? bigTensor->T[i] : 0;
                 }
             }
             else {
@@ -1754,4 +1762,546 @@ Tensor* normalize(Tensor* dst, Tensor* src){
     normalize_<<<((dst->sizeTensor/dst->stride[dst->num_dim - 2] + tile_SIZE - 1)/tile_SIZE), tile_SIZE>>>(dst->T, src->T, dst->stride[dst->num_dim - 2], dst->sizeTensor/dst->stride[dst->num_dim - 2], 1e-06);
     // normalize_<<<((dst->sizeTensor/dst->stride[dst->num_dim - 2] + tile_SIZE - 1)/tile_SIZE), tile_SIZE>>>(dst->T, src->T, 5, 2, 1e-06);
     return dst;
+}
+
+
+
+Tensor* addGrad(Tensor* ten){
+
+    if(ten->dT){
+        printf("addGrad : Tensor grad already allocated.\n");
+        return NULL;
+    }
+    if(!ten->device_type){
+        ten->dT = (float*)malloc(ten->sizeTensor * sizeof(float));
+    }else{
+        cudaSetDevice(ten->device_type-1);
+        cudaMalloc(&ten->dT, ten->sizeTensor * sizeof(float));
+    }
+    return ten;
+}
+
+
+
+
+Tensor* matmul_grad(Tensor* dC,char dC_Grad, Tensor* dA,char dA_Grad, Tensor* dB,char dB_Grad){
+ 
+    /////////////////////////////////grad change//////////////////////////////////////////////
+    float *Ts[3];
+    if(dA_Grad == GRAD_TRUE){
+        Ts[0] = dA->T;
+        if(!dA->dT){
+            printf("matmul_grad : dA has no grad.\n");
+            return NULL;
+        }
+        dA->T = dA->dT;
+    }
+    if(dB_Grad&& dA != dB){
+        Ts[1] = dB->T;
+        if(!dB->dT){
+            printf("matmul_grad : dB has no grad.\n");
+            return NULL;
+        }
+        dB->T = dB->dT;
+    }
+    if(dC_Grad){
+        Ts[2] = dC->T;
+        if(!dC->dT){
+            printf("matmul_grad : dC has no grad.\n");
+            return NULL;
+        }
+        dC->T = dC->dT;
+    }
+    matmul(dC, dA, dB);
+    //////////////////////////////////grad 복구/////////////////////////////////////////////
+
+    if(dA_Grad){
+        dA->dT = dA->T;
+        dA->T = Ts[0];
+    }
+    if(dB_Grad&& dA != dB){
+        dB->dT = dB->T;
+        dB->T = Ts[1];
+    }
+    if(dC_Grad){
+        dC->dT = dC->T;
+        dC->T = Ts[2];
+    }
+    return dC;   
+}
+
+
+//Tensor* dC, Tensor* dA, char operand, Tensor* dB
+Tensor* elementWise_Tensor_grad(Tensor*dC,char dC_Grad, Tensor* dA,char dA_Grad, char operand,Tensor* dB, char dB_Grad){
+    
+    /////////////////////////////////grad change//////////////////////////////////////////////
+    float *Ts[3];
+    if(dA_Grad == GRAD_TRUE){
+        Ts[0] = dA->T;
+        if(!dA->dT){
+            printf("elementWise_Tensor_grad : dA has no grad.\n");
+            return NULL;
+        }
+        dA->T = dA->dT;
+    }
+    if(dB_Grad){
+        Ts[1] = dB->T;
+        if(!dB->dT){
+            printf("elementWise_Tensor_grad : dB has no grad.\n");
+            return NULL;
+        }
+        dB->T = dB->dT;
+    }
+    if(dC_Grad && !((dA == dC) && dA_Grad) && !((dB == dC) && dB_Grad)){
+        Ts[2] = dC->T;
+        if(!dC->dT){
+            printf("elementWise_Tensor_grad : dC has no grad.\n");
+            return NULL;
+        }
+        dC->T = dC->dT;
+    }
+    elementWise_Tensor(dC, dA, operand, dB);
+
+    //////////////////////////////////grad 복구/////////////////////////////////////////////
+
+    if(dA_Grad){
+        dA->dT = dA->T;
+        dA->T = Ts[0];
+    }
+    if(dB_Grad){
+        dB->dT = dB->T;
+        dB->T = Ts[1];
+    }
+    if(dC_Grad && !((dA == dC) && dA_Grad) && !((dB == dC) && dB_Grad)){
+        dC->dT = dC->T;
+        dC->T = Ts[2];
+    }
+    return dC;
+}
+
+//Tensor* dC, Tensor* dA, char operand, Tensor* dB
+Tensor* elementWise_Tensor_grad_2(Tensor*dC,char dC_Grad, Tensor* dA,char dA_Grad, char operand,Tensor* dB, char dB_Grad){
+    
+    /////////////////////////////////grad change//////////////////////////////////////////////
+    float *Ts[3];
+    if(dA_Grad == GRAD_TRUE){
+        if(!dA->dT){
+            printf("elementWise_Tensor_grad : dA has no grad.\n");
+            return NULL;
+        }
+        Ts[0] = dA->dT;
+    }else{
+        Ts[0] = dA->T;
+    }
+
+    if(dB_Grad){
+        if(!dB->dT){
+            printf("elementWise_Tensor_grad : dB has no grad.\n");
+            return NULL;
+        }
+        Ts[1] = dB->dT;
+    }else{
+        Ts[1] = dB->T;
+    }
+    if(dC_Grad){
+        if(!dC->dT){
+            printf("elementWise_Tensor_grad : dC has no grad.\n");
+            return NULL;
+        }
+        Ts[2] = dC->dT;
+    }else{
+        Ts[2] = dC->T;
+    }
+
+    if(!dC || !dA || !dB){
+        printf("elementWise_Tensor : no Tensor\n");
+        return NULL;
+    }
+    if(dC->device_type != dB->device_type || dB->device_type != dA->device_type){
+        printf("elementWise_Tensor : Device type does not match\n");
+        return NULL;
+    }
+    
+    if(dC->num_dim != dB->num_dim && dC->num_dim != dA->num_dim){
+        printf("elementWise_Tensor : Number of dim does not match.\n");
+        return NULL;
+    }
+
+    // Handle broadcasting if num_dim is different between dA and dB
+    if(dA->num_dim != dB->num_dim){
+        Tensor* bigTensor, *littleTensor;
+
+        if(dA->num_dim > dB->num_dim){
+            bigTensor = dA;
+            littleTensor = dB;
+        }else{
+            bigTensor = dB;
+            littleTensor = dA;
+            float* tmp = Ts[1];
+            Ts[1] = Ts[0];
+            Ts[0] = tmp;
+        }
+        int cont = bigTensor->num_dim - littleTensor->num_dim;
+        for(int i=0; i < littleTensor->num_dim; i++){
+            if(bigTensor->dim[i+cont] != littleTensor->dim[i]){
+                printf("elementWise_Tensor : dimension does not match.\n");
+                return NULL;
+            }
+        }
+
+        // GPU computation case
+        if(dC->device_type){
+            cudaSetDevice(dC->device_type - 1);
+            int s_tile_SIZE = tile_SIZE * tile_SIZE;
+
+            // Handle different operators on GPU
+            if(operand == '+'){                                                                             //elementwise_broadcast_add_(float* dC, float* dBig, float* dLittle, int len_Big, int len_little)
+                elementwise_broadcast_add_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], bigTensor->sizeTensor, littleTensor->sizeTensor);
+            }
+            else if(operand == '-'){
+                if(bigTensor == dA)
+                    elementwise_broadcast_sub_Abig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], bigTensor->sizeTensor, littleTensor->sizeTensor);
+                else{
+                    elementwise_broadcast_sub_Bbig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], bigTensor->sizeTensor, littleTensor->sizeTensor);
+                }
+            }
+            else if(operand == '*'){
+                elementwise_broadcast_mult_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], bigTensor->sizeTensor, littleTensor->sizeTensor);
+            }
+            else if(operand == '/'){
+                if(bigTensor == dA)
+                    elementwise_broadcast_div_Abig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], bigTensor->sizeTensor, littleTensor->sizeTensor);
+                else{
+                    elementwise_broadcast_div_Bbig_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], bigTensor->sizeTensor, littleTensor->sizeTensor);
+                }
+            }
+            else if(operand == 'M' || operand == 'm'){
+                elementwise_mask_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], dC->sizeTensor);
+            } else {
+                printf("elementWise_Tensor : not an appropriate operand\n");
+                return NULL;
+            }
+
+        } else {  // CPU computation case
+            int i_little = 0;
+            if(operand == '+'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    i_little = i % littleTensor->sizeTensor;
+                    Ts[2][i] = Ts[0][i] + Ts[1][i_little];
+                }
+            }
+            else if(operand == '-'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    i_little = i % littleTensor->sizeTensor;
+                    Ts[2][i] = Ts[0][i] - Ts[1][i_little];
+                }
+            }
+            else if(operand == '*'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    i_little = i % littleTensor->sizeTensor;
+                    Ts[2][i] = Ts[0][i] * Ts[1][i_little];
+                }
+            }
+            else if(operand == '/'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    i_little = i % littleTensor->sizeTensor;
+                    Ts[2][i] = Ts[0][i] / Ts[1][i_little];
+                }
+            }
+            else if(operand == 'M' || operand == 'm'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    i_little = i % littleTensor->sizeTensor;
+                    Ts[2][i] = (Ts[1][i_little]>0) ? Ts[0][i] : 0;
+                }
+            }
+            else {
+                printf("elementWise_Tensor : not an appropriate operand\n");
+                return NULL;
+            }
+        }
+
+    } else {
+        // Dimensions match, proceed with element-wise operations
+        for(int i=0; i < dC->num_dim; i++){
+            if(dC->dim[i] != dB->dim[i] || dC->dim[i] != dA->dim[i]){
+                printf("elementWise_Tensor : dimension does not match.\n");
+                return NULL;
+            }
+        }
+
+        // GPU computation case
+        if(dC->device_type){
+            cudaSetDevice(dC->device_type - 1);
+            int s_tile_SIZE = tile_SIZE * tile_SIZE;
+
+            if(operand == '+'){
+                elementwise_add_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], dC->sizeTensor);
+            }
+            else if(operand == '-'){
+                elementwise_sub_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], dC->sizeTensor);
+            }
+            else if(operand == '*'){
+                elementwise_mult_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], dC->sizeTensor);
+            }
+            else if(operand == '/'){
+                elementwise_div_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], dC->sizeTensor);
+            }
+            else if(operand == 'M' || operand == 'm'){
+                elementwise_mask_<<< (dC->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(Ts[2], Ts[0], Ts[1], dC->sizeTensor);
+            } else {
+                printf("elementWise_Tensor : not an appropriate operand\n");
+                return NULL;
+            }
+
+        } else {  // CPU computation case
+            if(operand == '+'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    Ts[2][i] = Ts[0][i] + Ts[1][i];
+                }
+            }
+            else if(operand == '-'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    Ts[2][i] = Ts[0][i] - Ts[1][i];
+                }
+            }
+            else if(operand == '*'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    Ts[2][i] = Ts[0][i] * Ts[1][i];
+                }
+            }
+            else if(operand == '/'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    Ts[2][i] = Ts[0][i] / Ts[1][i];
+                }
+            }
+            else if(operand == 'M' || operand == 'm'){
+                for(int i=0; i < dC->sizeTensor; i++){
+                    Ts[2][i] = Ts[1][i] ? Ts[0][i] : 0;
+                }
+            }
+            else {
+                printf("elementWise_Tensor : not an appropriate operand\n");
+                return NULL;
+            }
+        }
+    }
+
+    return dC;
+
+    //////////////////////////////////grad 복구/////////////////////////////////////////////
+
+    // if(dA_Grad){
+    //     dA->dT = dA->T;
+    //     dA->T = Ts[0];
+    // }
+    // if(dB_Grad){
+    //     dB->dT = dB->T;
+    //     dB->T = Ts[1];
+    // }
+    // if(dC_Grad && !((dA == dC) && dA_Grad) && !((dB == dC) && dB_Grad)){
+    //     dC->dT = dC->T;
+    //     dC->T = Ts[2];
+    // }
+    // return dC;
+}
+
+
+
+Tensor* rowcolwise_sum_grad(Tensor*dst,int dst_Grad, Tensor*src,int src_Grad, char axis){
+    float *Ts[2];
+    if(dst_Grad == GRAD_TRUE){
+        Ts[0] = dst->T;
+        if(!dst->dT){
+            printf("rowcolwise_sum_grad : dst has no grad.\n");
+            return NULL;
+        }
+        dst->T = dst->dT;
+    }
+    if(src_Grad == GRAD_TRUE){
+        Ts[1] = src->T;
+        if(!src->dT){
+            printf("rowcolwise_sum_grad : src has no grad.\n");
+            return NULL;
+        }
+        src->T = src->dT;
+    }
+    rowcolwise_sum(dst, src, axis);
+    if(dst_Grad == GRAD_TRUE){
+        dst->T = Ts[0];
+    }
+    if(src_Grad == GRAD_TRUE){
+        src->T = Ts[1];
+    }
+    return dst;
+}
+
+
+Tensor* copyTensor_grad(Tensor *dst, Tensor *src){
+    if(!dst || !src){
+        printf("copyTensor : No dst or src\n");
+        return NULL;
+    }
+    if(dst->isSub||src->isSub){
+        printf("copyTensor : dst or src is subTensor.");
+        return NULL;
+    }
+    if(dst->num_dim != src->num_dim){
+        printf("copyTensor : shape of dst and src doesn't match.\n");
+        return NULL;
+    }
+    for(int i=0; i < dst->num_dim; i++){
+        if(dst->dim[i] != src->dim[i]){
+            printf("copyTensor : shape of dst and src doesn't match.\n");
+            return NULL;
+        }
+    }
+
+    if(!src->dT){
+        printf("src has no dT.\n");
+        return NULL;
+    }
+    if(!dst->device_type && !src->device_type){ //CPU to CPU
+        for(int i=0; i < dst->dim[0]*dst->stride[0]; i++)
+            dst->T[i] = src->T[i];
+
+    }
+
+    else if(dst->device_type && src->device_type){
+        cudaSetDevice(dst->device_type -1);
+        cudaMemcpy(dst->T, src->T, dst->sizeTensor * sizeof(float), cudaMemcpyDeviceToDevice);
+        if(!dst->dT){
+            cudaMalloc(&dst->dT, sizeof(float) * dst->sizeTensor);
+        }
+        cudaMemcpy(dst->dT, src->dT, dst->sizeTensor * sizeof(float), cudaMemcpyDeviceToDevice);
+
+    }
+    else if(dst->device_type){
+        cudaSetDevice(dst->device_type -1);
+        cudaMemcpy(dst->T, src->T, dst->sizeTensor * sizeof(float), cudaMemcpyHostToDevice);
+        if(!dst->dT){
+            cudaMalloc(&dst->dT, sizeof(float) * dst->sizeTensor);
+        }
+        cudaMemcpy(dst->dT, src->dT, dst->sizeTensor * sizeof(float), cudaMemcpyHostToDevice);
+    }else{
+        cudaSetDevice(src->device_type -1);
+        cudaMemcpy(dst->T, src->T, dst->sizeTensor * sizeof(float), cudaMemcpyDeviceToHost);
+        if(!dst->dT){
+            dst->dT = (float*)malloc(sizeof(float) * dst->sizeTensor);
+        }
+        cudaMemcpy(dst->dT, src->dT, dst->sizeTensor * sizeof(float), cudaMemcpyDeviceToHost);
+    }
+    return dst;
+}
+
+
+
+Tensor* printTensor_grad(Tensor *ten){
+    if(!ten){
+        printf("printTensor : No tensor.\n");
+        return NULL;
+    }
+    if(ten->device_type){
+        printf("printTensor : GPU mem can not be printed\n");
+        return ten;
+    }
+    infoTensor(ten);
+    //==============if ten->num_dim < 3========================
+    if(ten->num_dim == 1){
+        printf("[ %d ]\n", ten->dim[0]);
+        for(int i=0; i < ten->dim[0]; i+=ten->stride[0]){
+            printf("%.03f\t", ten->dT[i]);
+        }
+        printf("\n");
+        return ten;
+    }
+
+    if(ten->num_dim == 2){
+        printf("[ %d %d ]\n", ten->dim[0], ten->dim[1]);
+        for(int i=0; i < ten->dim[0]*ten->stride[0]; i+=ten->stride[0]){
+            for(int j=0; j < ten->dim[1]*ten->stride[1]; j+=ten->stride[1]){
+                printf("%.03f\t", ten->dT[i + j]);
+                // printf("%d\t", ten->stride[0]* i + j);
+            }
+            printf("\n");
+        }
+        printf("\n");
+        return ten;
+    }
+    //=================else====================================
+    printf("=\n");
+
+    int* tmp_Inx = (int*)malloc(sizeof(int) * (ten->num_dim - 2));
+    for(int i=0; i < ten->num_dim - 2; i++){
+        tmp_Inx[i] = 0;
+    }
+    int inx;
+    while(tmp_Inx[0] < ten->dim[0]){
+        inx = 0;
+        printf("[ ");
+        for(int i=0; i < ten->num_dim-2;i++){
+            printf("%d ", tmp_Inx[i]);
+            inx += tmp_Inx[i] * ten->stride[i];
+        }
+        printf("- - ]\n");
+
+        for(int i=0; i < ten->dim[ten->num_dim-2]*ten->stride[ten->num_dim-2]; i+=ten->stride[ten->num_dim-2]){
+            for(int j=0; j < ten->dim[ten->num_dim-1]*ten->stride[ten->num_dim-1]; j+=ten->stride[ten->num_dim-1]){
+                printf("%.03f\t", ten->dT[inx + i + j]);
+                // printf("%d\t", ten->stride[0]* i + j);
+            }
+            printf("\n");
+        }
+
+        tmp_Inx[ten->num_dim - 3]++;
+        for(int i = ten->num_dim - 3; i > 0; i--){
+            if(tmp_Inx[i] >= ten->dim[i]){
+                tmp_Inx[i-1]++;
+                tmp_Inx[i] = 0;
+            }
+        }
+    }
+    printf("=\n");
+    free(tmp_Inx);
+    return ten;
+}
+
+
+
+
+
+
+
+
+
+__global__ void reset_Tensor_(float* A, int len, int num){
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i < len){
+        A[i] = num;
+    }
+}
+
+
+Tensor* reset_Tensor(Tensor* dst, int num){
+    if(!dst){
+        printf("reset_Tensor : no Tensor\n");
+        return NULL;
+    }
+    reset_Tensor_<<<((dst->sizeTensor + tile_SIZE - 1)/tile_SIZE), tile_SIZE>>>(dst->T, dst->sizeTensor, num);
+    return dst;
+}
+
+
+__global__ void update_add_(float* T, float* dT, float lr, int len){
+    int inx = blockDim.x * blockIdx.x + threadIdx.x;
+    if(inx < len)
+        T[inx] -= lr * dT[inx];
+}
+
+Tensor* updateTensor(Tensor* ten, float learning_rate){
+    cudaSetDevice(ten->device_type - 1);
+    int s_tile_SIZE = tile_SIZE * tile_SIZE;
+    if(ten->dT)
+        update_add_<<< (ten->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(ten->T, ten->dT, learning_rate, ten->sizeTensor);
+    cudaMemset(ten->dT, 0, ten->sizeTensor * sizeof(float));
+    return ten;
 }
