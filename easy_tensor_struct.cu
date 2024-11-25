@@ -2,7 +2,7 @@
 #include<stdlib.h>
 #include<cuda_runtime.h>
 #include <math.h>
-
+#include <cublas_v2.h>
 #include "easy_tensor.h"
 //나중에는 나눠서 각각의 gpu 안에 넣어야하기 때문에 생각을 해보면 인덱스 값에 따라 값을 copy 해주는 것도 있으면 좋을 것 같다.
 //기존 텐서와 다른점. 
@@ -482,6 +482,33 @@ Tensor* copyTensor(Tensor *dst, Tensor *src){
     }
     return dst;
 }
+
+// __global__ void copySubTensor(float*dst, float*src, int*dst_dim_stride, int*src_dim_stride, int* reshape, int num_dim, int sizeTensor){
+//     src_dim_stride += num_dim;
+//     dst_dim_stride += num_dim;
+//     int new_inx = blockDim.x * blockIdx.x + threadIdx.x;
+
+//     int new_tmp = new_inx;
+//     int inx = 0;    
+// }
+
+// Tensor* copySubTensor(Tensor* dst, Tensor* src){
+//     if(!dst || !src){
+//         printf("copyTensor : No dst or src\n");
+//         return NULL;
+//     }
+
+//     if(dst->num_dim != src->num_dim){
+//         printf("copyTensor : shape of dst and src doesn't match.\n");
+//         return NULL;
+//     }
+//     for(int i=0; i < dst->num_dim; i++){
+//         if(dst->dim[i] != src->dim[i]){
+//             printf("copyTensor : shape of dst and src doesn't match.\n");
+//             return NULL;
+//         }
+//     }
+// }
 
 
 __global__ void reshape_(float* dst, float* src, int* dst_dim_stride, int* src_dim_stride, int* reshape, int num_dim, int sizeTensor){
@@ -1291,6 +1318,39 @@ Tensor* softMax(Tensor* dst, Tensor* src){
     return dst;
 }
 
+Tensor* softMax_broad(Tensor* dst, Tensor* src){
+    if(!src ||!dst){
+        printf("softMax : no Tensor.\n");
+        return NULL;
+    }
+    if(!dst->device_type != !src->device_type){
+        printf("sortMax : Two Tensors are in different device.\n");
+    }
+
+    if(src->device_type){
+        cudaSetDevice(src->device_type - 1);
+        int s_tile_SIZE = tile_SIZE * tile_SIZE; //no special drawbacks in parallel sequence 임
+
+        softmax_<<< (dst->dim[0] + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(dst->T, src->T, src->sizeTensor, src->dim[src->num_dim -1]);
+    }else{
+        for(int i=0; i < src->dim[0]; i++){
+            float max =  -__FLT_MAX__;
+            float sum = 0;
+            for(int j=0; j < src->dim[1]; j++){
+                if(src->T[i * src->stride[0] + j] > max)
+                    max = src->T[i * src->stride[0]];
+            }
+            for(int j=0; j < src->dim[1]; j++){
+                sum += expf(src->T[i * src->stride[0] + j]-max);
+            }
+            for(int j=0; j < src->dim[1]; j++){
+                dst->T[i * dst->stride[0] + j] = expf(src->T[i * src->stride[0] + j]-max)/sum;
+            }
+        }
+
+    }
+    return dst;
+}
 
 
 __global__ void elementwise_add_(float* dC, float* dA, float* dB, int len){
@@ -1750,8 +1810,281 @@ Tensor* normalize(Tensor* dst, Tensor* src){
         printf("two tensor has different shape.\n");
         return NULL;
     }
-
+    
     normalize_<<<((dst->sizeTensor/dst->stride[dst->num_dim - 2] + tile_SIZE - 1)/tile_SIZE), tile_SIZE>>>(dst->T, src->T, dst->stride[dst->num_dim - 2], dst->sizeTensor/dst->stride[dst->num_dim - 2], 1e-06);
     // normalize_<<<((dst->sizeTensor/dst->stride[dst->num_dim - 2] + tile_SIZE - 1)/tile_SIZE), tile_SIZE>>>(dst->T, src->T, 5, 2, 1e-06);
     return dst;
+}
+
+
+
+#define CUDA_CHECK(status) \
+    if (status != cudaSuccess) { \
+        printf("CUDA Error: %s\n", cudaGetErrorString(status)); \
+        return NULL; \
+    }
+
+#define CUBLAS_CHECK(status) \
+    if (status != CUBLAS_STATUS_SUCCESS) { \
+        printf("cuBLAS Error\n"); \
+        return NULL; \
+    }
+
+
+// Function to perform batched matrix multiplication with broadcasting
+Tensor* matmul_cublas_batched(Tensor* dC, Tensor* dA, Tensor* dB) {
+    if (!dC || !dA || !dB) {
+        printf("matmul_cublas_batched: One of the input tensors is NULL.\n");
+        return NULL;
+    }
+
+    if (dC->device_type != dA->device_type || dA->device_type != dB->device_type) {
+        printf("matmul_cublas_batched: Tensors are on different devices.\n");
+        return NULL;
+    }
+
+    if (dA->num_dim < 2 || dB->num_dim < 2) {
+        printf("matmul_cublas_batched: Input tensors must have at least 2 dimensions.\n");
+        return NULL;
+    }
+
+    cudaSetDevice(dA->device_type - 1);
+    cublasHandle_t handle;
+    CUBLAS_CHECK(cublasCreate(&handle));
+
+    // Determine batch size
+    int batchCount = (dC->num_dim >= 3) ? dC->dim[0] : 1;
+
+    //M, K, N
+    int M = dA->dim[dA->num_dim - 2];  // Rows of A
+    int K = dA->dim[dA->num_dim - 1];  // Columns of A
+    int N = dB->dim[dB->num_dim - 1];
+    char batch_flag = 0;
+    //make batch
+    if(dC->num_dim == 3){
+        if (dA->num_dim == 3 && dB->num_dim == 2) {
+            // B needs to be broadcasted
+            // Create batched version of B
+            int B_b_dim[] = {dA->dim[0], dB->dim[0], dB->dim[1]};
+
+            Tensor* B_batched = mallocTensor(B_b_dim, 3, dB->device_type);
+            // Copy B into each batch
+            for (int i = 0; i < batchCount; ++i) {
+                CUDA_CHECK(cudaMemcpy(B_batched->T + i * B_batched->stride[0],
+                                    dB->T,
+                                    dB->sizeTensor * sizeof(float),
+                                    cudaMemcpyDeviceToDevice));
+            }
+            dB = B_batched;
+            batch_flag = 1;
+        } else if (dB->num_dim == 3 && dA->num_dim == 2) {
+            int A_b_dim[] = {dB->dim[0], dA->dim[0], dA->dim[1]};
+            Tensor* A_batched = mallocTensor(A_b_dim, 3, dA->device_type);
+            for (int i = 0; i < batchCount; ++i) {
+                CUDA_CHECK(cudaMemcpy(A_batched->T + i * A_batched->stride[0],
+                                    dA->T,
+                                    dA->sizeTensor * sizeof(float),
+                                    cudaMemcpyDeviceToDevice));
+            }
+            dA = A_batched;
+            batch_flag = 2;
+        } else if(dA->num_dim==dC->num_dim && dA->num_dim == dB->num_dim && dA->dim[0] == dB->dim[0]){
+            //
+        } 
+        else {
+            printf("matmul_cublas_batched: one of A, B must have at least 3 dimensions.\n");
+            return NULL;
+        }
+    }
+    
+
+    // Now dA and dB both have batchCount batches
+    // Leading dimensions
+    int lda = K;
+    int ldb = N;
+    int ldc = N;
+
+    // Strides
+    long long strideA = (dA->num_dim >= 3) ? dA->stride[0] : M * K;
+    long long strideB = (dB->num_dim >= 3) ? dB->stride[0] : K * N;
+    long long strideC = (dC->num_dim >= 3) ? dC->stride[0] : M * N;
+
+    float alpha = 1.0f;
+    float beta = 0.0f;
+
+    // printf("M = %d, N = %d, K = %d\n", M, N, K);
+    // printf("lda = %d, ldb = %d, ldc = %d\n", lda, ldb, ldc);
+    // printf("strideA = %lld, strideB = %lld, strideC = %lld\n", strideA, strideB, strideC);
+    // printf("batchCount = %d\n", batchCount);
+
+    // Perform batched matrix multiplication
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        N, M, K,  // Note: Swap M and N due to row-major storage
+        &alpha,
+        dB->T, ldb, strideB,
+        dA->T, lda, strideA,
+        &beta,
+        dC->T, ldc, strideC,
+        batchCount
+    ));
+    //clean
+    if(batch_flag == 1){//B is batched
+        freeTensor(dB);
+    }else if(batch_flag == 2){//A is batched
+        freeTensor(dA);
+    }
+
+    cublasDestroy(handle);
+
+    return dC;
+}
+
+// Function to perform batched matrix multiplication with broadcasting
+Tensor* matmul_cublas_batched_bias(Tensor* dC, Tensor* dA, Tensor* dB, Tensor* dbias) {
+    if (!dC || !dA || !dB) {
+        printf("matmul_cublas_batched: One of the input tensors is NULL.\n");
+        return NULL;
+    }
+
+    if (dC->device_type != dA->device_type || dA->device_type != dB->device_type) {
+        printf("matmul_cublas_batched: Tensors are on different devices.\n");
+        return NULL;
+    }
+
+    if (dA->num_dim < 2 || dB->num_dim < 2) {
+        printf("matmul_cublas_batched: Input tensors must have at least 2 dimensions.\n");
+        return NULL;
+    }
+
+    cudaSetDevice(dA->device_type - 1);
+    cublasHandle_t handle;
+    CUBLAS_CHECK(cublasCreate(&handle));
+
+    // Determine batch size
+    int batchCount = (dC->num_dim >= 3) ? dC->dim[0] : 1;
+
+    //bias 
+    dC = add_Bias(dC, dbias);
+    //M, K, N
+    int M = dA->dim[dA->num_dim - 2];  // Rows of A
+    int K = dA->dim[dA->num_dim - 1];  // Columns of A
+    int N = dB->dim[dB->num_dim - 1];
+    char batch_flag = 0;
+    //make batch
+    if(dC->num_dim == 3){
+        if (dA->num_dim == 3 && dB->num_dim == 2) {
+            // B needs to be broadcasted
+            // Create batched version of B
+            int B_b_dim[] = {dA->dim[0], dB->dim[0], dB->dim[1]};
+
+            Tensor* B_batched = mallocTensor(B_b_dim, 3, dB->device_type);
+            // Copy B into each batch
+            for (int i = 0; i < batchCount; ++i) {
+                CUDA_CHECK(cudaMemcpy(B_batched->T + i * B_batched->stride[0],
+                                    dB->T,
+                                    dB->sizeTensor * sizeof(float),
+                                    cudaMemcpyDeviceToDevice));
+            }
+            dB = B_batched;
+            batch_flag = 1;
+        } else if (dB->num_dim == 3 && dA->num_dim == 2) {
+            int A_b_dim[] = {dB->dim[0], dA->dim[0], dA->dim[1]};
+            Tensor* A_batched = mallocTensor(A_b_dim, 3, dA->device_type);
+            for (int i = 0; i < batchCount; ++i) {
+                CUDA_CHECK(cudaMemcpy(A_batched->T + i * A_batched->stride[0],
+                                    dA->T,
+                                    dA->sizeTensor * sizeof(float),
+                                    cudaMemcpyDeviceToDevice));
+            }
+            dA = A_batched;
+            batch_flag = 2;
+        } else if(dA->num_dim==dC->num_dim && dA->num_dim == dB->num_dim && dA->dim[0] == dB->dim[0]){
+            //
+        } 
+        else {
+            printf("matmul_cublas_batched: one of A, B must have at least 3 dimensions.\n");
+            return NULL;
+        }
+    }
+    
+
+    // Now dA and dB both have batchCount batches
+    // Leading dimensions
+    int lda = K;
+    int ldb = N;
+    int ldc = N;
+
+    // Strides
+    long long strideA = (dA->num_dim >= 3) ? dA->stride[0] : M * K;
+    long long strideB = (dB->num_dim >= 3) ? dB->stride[0] : K * N;
+    long long strideC = (dC->num_dim >= 3) ? dC->stride[0] : M * N;
+
+    float alpha = 1.0f;
+    float beta = 1.0f;
+
+    // printf("M = %d, N = %d, K = %d\n", M, N, K);
+    // printf("lda = %d, ldb = %d, ldc = %d\n", lda, ldb, ldc);
+    // printf("strideA = %lld, strideB = %lld, strideC = %lld\n", strideA, strideB, strideC);
+    // printf("batchCount = %d\n", batchCount);
+
+    // Perform batched matrix multiplication
+    CUBLAS_CHECK(cublasSgemmStridedBatched(
+        handle,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        N, M, K,  // Note: Swap M and N due to row-major storage
+        &alpha,
+        dB->T, ldb, strideB,
+        dA->T, lda, strideA,
+        &beta,
+        dC->T, ldc, strideC,
+        batchCount
+    ));
+    //clean
+    if(batch_flag == 1){//B is batched
+        freeTensor(dB);
+    }else if(batch_flag == 2){//A is batched
+        freeTensor(dA);
+    }
+
+    cublasDestroy(handle);
+
+    return dC;
+}
+
+
+
+__global__ void addBias_(float* C, float* bias, int C_len, int bias_len){
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    int i_bias = i % bias_len;
+    if(i < C_len){
+        C[i] = bias[i_bias];
+    }
+}
+
+Tensor* add_Bias(Tensor* C, Tensor* bias){
+    if(!C || !bias){
+        printf("add_Bias : no Tensor.\n");
+        return NULL;
+    }
+    if(bias->num_dim != 1){
+        printf("add_Bias : bias dimension not appropriate(num_dim)\n");
+        return NULL;
+    }
+
+    if(bias->dim[0] != C->dim[C->num_dim -1]){
+        printf("add_Bias : bias and last dimension of C doesnot match\n");
+        return NULL;
+    }
+    if(bias->device_type != C->device_type){
+        printf("add_Bias : This has a diffrnt device type\n");
+        return NULL;
+    }
+
+    cudaSetDevice(C->device_type - 1);
+        int s_tile_SIZE = tile_SIZE * tile_SIZE;//no special drawbacks in parallel sequence, so just put the values into the tiles linearly.
+    addBias_<<<(C->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE>>>(C->T, bias->T, C->sizeTensor, bias->sizeTensor);
+
+    return C;
 }

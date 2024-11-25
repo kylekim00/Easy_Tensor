@@ -51,11 +51,13 @@ Tensor* infoTensor(Tensor *ten);
 
 Tensor* matmul(Tensor* dC, Tensor *dA, Tensor* dB);
 Tensor* matmul_bias(Tensor* dC, Tensor* dA, Tensor* dB, Tensor* dbias, char rowwise_bias);
+Tensor* matmul_cublas_batched_bias(Tensor* dC, Tensor* dA, Tensor* dB, Tensor* dbias);
+Tensor* matmul_cublas_batched(Tensor* dC, Tensor* dA, Tensor* dB);
 Tensor* ReLU_inline(Tensor *ten);
 
 Tensor* gelu_Tensor(Tensor* ten);
 Tensor* softMax(Tensor* dst, Tensor*src);
-
+Tensor* softMax_broad(Tensor* dst, Tensor* src);
 //0 : add, 1 : subtract, 2: multiply, 10: mask (dA source, dB mask)
 Tensor* elementWise_Tensor(Tensor* dC, Tensor* dA, char operand,Tensor* dB);
 
@@ -64,6 +66,8 @@ Tensor* rowcolwise_sum(Tensor*dst, Tensor*src, char axis);
 Tensor* scalar_Tensor(Tensor*dst,char operand ,float scalar);
 
 Tensor* normalize(Tensor*dst, Tensor* src);
+
+Tensor* add_Bias(Tensor* C, Tensor* bias);
 
 #endif // TENSOR_H
 

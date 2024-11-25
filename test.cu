@@ -11,7 +11,7 @@ Tensor* dummyTensor(Tensor *ten){
 
 Tensor* dummyTensor2(Tensor *ten){
     for(int i=0; i < ten->sizeTensor; i++){
-        ten->T[i] = 2;
+        ten->T[i] = i-32;
     }
     return ten;
 }
@@ -31,10 +31,10 @@ int main(){
     // dA = normalize(dA, dA);
     // printTensor(makeSubTensor(copyTensor(A, dA),"0,0,0", "8 8"));
 
-    Tensor *A = dummyTensor(makeTensor("4 3 5 5", 0));
+    Tensor *A = dummyTensor(makeTensor("2 2 64", 0));
     Tensor* dA = copyTensor(makeTensorbyShape(A, 1), A);
     
-    Tensor* B = dummyTensor(makeTensor("5 5",0));
+    Tensor* B = dummyTensor2(makeTensor("64",0));
     Tensor* dB = copyTensor(makeTensorbyShape(B, 1), B);
 
     // Tensor* dA = copyTensor(makeTensorbyShape(A, 1), A);
@@ -43,11 +43,11 @@ int main(){
 
     printTensor(A);
     // printTensor(elementWise_Tensor(C, A, '+', B));
-    printTensor(copyTensor(C, elementWise_Tensor(dC, dB,'*',dA)));
+    printTensor(copyTensor(A, elementWise_Tensor(dA, dB,'*',dA)));
 
 
 
-    Tensor* (*dd)(Tensor*);
-    dd = printTensor;
-    dd(A);
+    // Tensor* (*dd)(Tensor*);
+    // dd = printTensor;
+    // dd(A);
 }
