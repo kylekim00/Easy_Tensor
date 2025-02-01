@@ -5,6 +5,7 @@ To run the example code, Unzip ```./DNN_example/data/data.zip```first.<br/>
 <hr/>
 
 ## Description
+[youtube](https://www.youtube.com/watch?v=2VjVGQpVTj0)
 
 - ```./CAPSTONE/```: Presentation images<br/>
 - ```./DNN_example/data/MNIST/raw```: zip file for MNIST data<br/>
