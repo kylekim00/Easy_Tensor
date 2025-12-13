@@ -177,7 +177,6 @@ public:
             
             if(down_tmp0){
                 
-                elementWise_Tensor(downstream[0], downstream[0], '+', down_tmp0);
                 downstream[0] = elementWise_Tensor_grad(downstream[0], GRAD_TRUE, downstream[0], GRAD_TRUE,'+' , down_tmp0, GRAD_TRUE);
                 freeTensor(down_tmp0);
             }
