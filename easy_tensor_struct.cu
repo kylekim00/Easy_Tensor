@@ -32,24 +32,27 @@ Tensor *mallocTensor(int *dim, int num_dim, int device_type){
 
     Tensor* ten = (Tensor*)malloc(sizeof(Tensor));      //give tensor a space for host
     ten->dim = (int*)malloc(2 * num_dim * sizeof(int)); //give dim and stride a spcae for host
-    ten->stride = ten->dim+num_dim;                    //this approach might be effective when sending to GPU later.
+    ten->stride = ten->dim+num_dim;                     //this approach will be effective when sending dimention info to GPU later.
 
-    ten->num_dim = num_dim;
-    ten->device_type = device_type;
+    ten->num_dim = num_dim;                             //giving number of dimension vector
+    ten->device_type = device_type;                     //giving device type 
 
-    sizeTensor = 1;
+
+
+    //I calculated sizeTensor like this in order to differenciate between logical dim and actual stride because of subTensor.
+    sizeTensor = 1;                                     //sizeTensor to calculate stride.
     for(int i= num_dim - 1; i >= 0; i--){
-        ten->dim[i] = dim[i];
-        ten->stride[i] = sizeTensor;
-        sizeTensor *= dim[i];
+        ten->dim[i] = dim[i];                           //giving dim vector to tensor
+        ten->stride[i] = sizeTensor;                    //giving stride vector
+        sizeTensor *= dim[i];                           //calculate sizeTensor
     }
 
-    ten->sizeTensor = sizeTensor;
+    ten->sizeTensor = sizeTensor;                       //giving sizeTensor
 
-    if(!device_type){
+    if(!device_type){                                   //CPU
         ten->T = (float*)malloc(sizeTensor * sizeof(float));
         ten->d_dim_stride = NULL;
-    }else{
+    }else{                                              //GPU
         cudaSetDevice(device_type-1);
         cudaMalloc(&ten->T, sizeTensor * sizeof(float));
         cudaMalloc(&ten->d_dim_stride, 2 * num_dim * sizeof(int));
@@ -61,11 +64,12 @@ Tensor *mallocTensor(int *dim, int num_dim, int device_type){
     return ten;
 }
 
+//makeTensor is to make tensor from string. This way I can allocate tensors more intuitively.
 Tensor* makeTensor(const char dim[], int device_type) {  // Use `const char[]`
     int dim_[MAX_NUM_DIM];  // Array to store dimensions
     int num_dim = 0;        // Counter for the number of dimensions
 
-    const char *ptr = dim;  // Pointer to traverse the string (now `const`)
+    const char *ptr = dim;  // Pointer to traverse the string 
 
     // Skip leading spaces
     while (*ptr == ' ') {
@@ -1724,8 +1728,8 @@ Tensor* scalar_Tensor(Tensor*dst, char operand ,float scalar){
     return dst;
 }
 
-__global__ void normalize_(float* output, float* input, int layer_size/*layer*/,int layer_num/*num_of_layer*/, float epsilon) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;// compute each layer
+__global__ void normalize_(float* output, float* input, int layer_size,int layer_num, float epsilon) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (idx < layer_num) {
         float mean = 0.0f;

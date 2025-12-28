@@ -9,44 +9,49 @@
 #define GRAD_TRUE 1
 #define GRAD_FALSE 0
 typedef struct Tensor{
-    float *T;           //명심해라. 이건 배열이 아니라 시작주소이다.
-    float *dT;          //미분값. T와 메모리의 위치는 같다. 
-    int *dim;           //dim. stride와는 다르다. subTensor에서는 완전 다르다. 
-    int *stride;        //다음 차원 얼마나 건너뛰어야하는지 알려줌.
-    int *d_dim_stride;  //GPU에 정보제공. 만약 CPU에 있으면 NULL.
-    int num_dim;        //dim, stride, d_dim_s~ 의 길이 정보제공
-    int sizeTensor;     //텐서 크기
-    char device_type;   //텐서위치
-    char isSub;         //subTensor인지 확인해줌.
-    char isParam;       //얘가 parameter인지 확인
+    float *T;           //Remember, this is a pointer, not an array. (CPU pointer if device_type == 0, GPU pointer if device_type > 0)
+    float *dT;          //derivative of T. (Also CPU pointer if device_type == 0, GPU pointer if device_type > 0)
+    int *dim;           //dimension, logical dimension which means memory jump could be different(esp. in subTensor) and that's why we need stride.
+    int *stride;        //stride, which tells us how many memory jump we need to make in order to change dim.
+    int *d_dim_stride;  //concat(dim, stride) for GPU.
+    int num_dim;        //dim, stride, d_dim_s~ length
+    int sizeTensor;     //physical size of whole tensor
+    char device_type;   //device type(cpu, gpu number)
+    char isSub;         //is it subTensor???
+    char isParam;       //Tells if this is a parameter(in case if it needs optimization from its derv.)
 }Tensor;
 
 Tensor *mallocTensor(int *dim, int num_dim, int device_type);
 
-//만들고
+//makeTensor is to make tensor from string. This way I can allocate tensors more intuitively.
 Tensor *makeTensor(const char dim[], int device_type);
 
-//모양따라 만들고.
+//makeTensorbyShape is to make tensor from another tensor. This way I can allocate tensors more intuitively.
 Tensor *makeTensorbyShape(Tensor* src, int device_type);
 
-//약간 커서같은 느낌. 그 부분의 값을 공유.
+//makeSubTensor is to make subTensor from existing tensor.
 Tensor *makeSubTensor(Tensor* src, const char* start_point, const char* dim);
 
-//메모리 해제
+//freeTensor is free...tensor.
 void freeTensor(Tensor *ten);
 
-//reshape하면서 값도 복사해줌. 아마도 느림. src는 subTensor이여도 된다.
 
-//부분 복사를 할 때,
-//"copyReshapeTensor(makeTensor(subDim,num_dim, 1), makeSubTensor(src, sp, subDim, num_dim));"이런식으로 복사를 해줄 수 있다.
-Tensor* copyReshapeTensor(Tensor* dst, Tensor* src, int* reshape);
-
-//얘는 dst, src모두 완전한Tensor 이어야한다. 대신 빠름.
+//copyTensor. Should not be subTensor. 
 Tensor* copyTensor(Tensor* dst, Tensor* src);
+
+//copy gradient of Tensor this also should not be subTensor.
 Tensor* copyTensor_grad(Tensor *dst, Tensor *src);
 
-
+//copyTransposeTensor. Should not be subTensor.
 Tensor* copyTransposeTensor(Tensor* dst, Tensor* src);
+
+//for partial copy(like subTensor), reshape can help you do it.
+//"copyReshapeTensor(makeTensor(subDim,num_dim, 1), makeSubTensor(src, sp, subDim, num_dim));"We can copy like this when we want to copy subTensor.
+//when tensor is 2dim, it uses transpose function for better performance.
+Tensor* copyReshapeTensor(Tensor* dst, Tensor* src, int* reshape);
+
+
+
 //값 출력. CPU만 된다.
 Tensor* printTensor(Tensor *ten);
 Tensor* printTensor_grad(Tensor *ten);

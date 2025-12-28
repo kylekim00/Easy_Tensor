@@ -54,7 +54,7 @@ int main(){
         char file_name[50];
         file_name[0] = 2*i + '0';
         strcpy(file_name+1, "_init_blocks.bin");
-        // We need a host tensor to load into first? copyTensorfromFILE reads into dst->T. 
+
         // dst must be CPU tensor.
         Tensor* w_temp = mallocTensor(in_dim, 2, 0); 
         copyTensorfromFILE(w_temp, file_name);
@@ -90,6 +90,7 @@ int main(){
     m1.addOperation(new CE_OP(d_A[4], d_label));
 
     //==============================TRAIN===========================================
+
     // For calculating accuracy on CPU, we need O on CPU
     in_dim[0] = batch_size;
     in_dim[1] = layer_dim[4];
