@@ -5,607 +5,141 @@
 
 using namespace std;
 
-class Operation{
-public:
-    string op_name;
-    Tensor** upstream;
-    Tensor** downstream;
-    int upstream_len;
-    int downstream_len;
-    Operation(int upstream_len, int downstream_len){
-        this->op_name = "Operation";
-        this->upstream = (Tensor**)malloc(sizeof(Tensor*) * upstream_len);
-        this->downstream = (Tensor**)malloc(sizeof(Tensor*) * downstream_len);
-        this->upstream_len = upstream_len;
-        this->downstream_len = downstream_len;
-    }
+#include "../model_class.cu"
 
-    virtual void forward() = 0;
-    virtual void backward() = 0;
+#include <time.h>
 
-    virtual string getOpname(){
-        return op_name;
-    }
-    virtual ~Operation(){
-        free(this->upstream);
-        free(this->downstream);
-    }
-};
-
-
-class Matmul_OP:public Operation{
-public:
-    Matmul_OP(Tensor* Y, Tensor* X1, Tensor* X2) : Operation(1, 2){
-        op_name = "matmul";
-        upstream[0] = Y;
-        downstream[0] = X1;
-        downstream[1] = X2;
-    }
-    void forward() override{
-        matmul(upstream[0], downstream[0], downstream[1]);
-    }
-    void backward() override{
-        if(upstream[0]->dT){
-            //downstream[0] deriv
-            //transpose downstream[1] tmp
-            int dim[downstream[1]->num_dim];
-            for(int i=0; i < downstream[1]->num_dim - 2; i++){
-                dim[i] = downstream[1]->dim[i];
-            }
-            dim[downstream[1]->num_dim - 2] = downstream[1]->dim[downstream[1]->num_dim - 1];
-            dim[downstream[1]->num_dim - 1] = downstream[1]->dim[downstream[1]->num_dim - 2];
-            Tensor* down1_T = mallocTensor(dim, downstream[1]->num_dim, downstream[1]->device_type);
-            copyTransposeTensor(down1_T, downstream[1]);
-
-            ///Transpose downstream[0] tmp
-            int dim2[downstream[0]->num_dim];
-            for(int i=0; i < downstream[0]->num_dim - 2; i++){
-                dim2[i] = downstream[0]->dim[i];
-            }
-            dim2[downstream[0]->num_dim - 2] = downstream[0]->dim[downstream[0]->num_dim - 1];
-            dim2[downstream[0]->num_dim - 1] = downstream[0]->dim[downstream[0]->num_dim - 2];
-            Tensor* down0_T = mallocTensor(dim2, downstream[0]->num_dim, downstream[0]->device_type);
-            copyTransposeTensor(down0_T, downstream[0]);
-
-            //derivative가 없다.
-            Tensor* down_tmp0 = NULL, *down_tmp1 = NULL;
-            if(!downstream[0]->dT){//만약 x2가 deriv가 없다. 
-                addGrad(downstream[0]);
-            }else{
-                down_tmp0 = makeTensorbyShape(downstream[0], downstream[0]->device_type);
-                down_tmp0 = copyTensor_grad(down_tmp0, downstream[0]);
-                // printTensor_grad(copyTensor_grad(makeTensorbyShape(downstream[0], 0), downstream[0]));
-                // printTensor_grad(copyTensor_grad(makeTensorbyShape(down_tmp0, 0), down_tmp0));
-            }
-            if(!downstream[1]->dT){//만약 x1이 deriv가 없다.
-                addGrad(downstream[1]);
-            }else{
-                down_tmp1 = makeTensorbyShape(downstream[1], downstream[1]->device_type);
-                down_tmp1 = copyTensor_grad(down_tmp1, downstream[1]);
-            }
-            //@X2 = X1^T x @Y
-            matmul_grad(downstream[1], 1,
-                        down0_T, 0,
-                        upstream[0], 1);
-            //@X1 = @Y x X2^T
-            matmul_grad(downstream[0], 1,
-                        upstream[0], 1,
-                        down1_T, 0
-                        );
-            // infoTensor(downstream[1]);
-            if(down_tmp0){
-                elementWise_Tensor(downstream[0], downstream[0], '+', down_tmp0);
-                downstream[0] = elementWise_Tensor_grad_2(downstream[0], GRAD_TRUE, downstream[0], GRAD_TRUE,'+' , down_tmp0, GRAD_TRUE);
-                freeTensor(down_tmp0);
-            }
-            if(down_tmp1){
-                downstream[1] = elementWise_Tensor_grad_2(downstream[1], GRAD_TRUE, downstream[1], GRAD_TRUE,'+' , down_tmp1, GRAD_TRUE);
-                freeTensor(down_tmp1);
-            }
-
-            freeTensor(down0_T);
-            freeTensor(down1_T);
-        }else{
-            Tensor*up = makeTensorbyShape(upstream[0], upstream[0]->device_type);
-            // 1로 채운 upstream 크기의 Tensor
-            if(up->device_type)
-                reset_Tensor(up, 1);
-            else{
-                for(int i=0; i < up->sizeTensor; i++)
-                    up->T[i] = 1;
-            }
-            
-
-            //////////////Transpose downstream////////////////
-            ///Transpose downstream[1] tmp
-            int dim[downstream[1]->num_dim];
-            for(int i=0; i < downstream[1]->num_dim - 2; i++){
-                dim[i] = downstream[1]->dim[i];
-            }
-            dim[downstream[1]->num_dim - 2] = downstream[1]->dim[downstream[1]->num_dim - 1];
-            dim[downstream[1]->num_dim - 1] = downstream[1]->dim[downstream[1]->num_dim - 2];
-            Tensor* down1_T = mallocTensor(dim, downstream[1]->num_dim, downstream[1]->device_type);
-            copyTransposeTensor(down1_T, downstream[1]);
-
-            ///Transpose downstream[0] tmp
-            int dim2[downstream[0]->num_dim];
-            for(int i=0; i < downstream[0]->num_dim - 2; i++){
-                dim2[i] = downstream[0]->dim[i];
-            }
-            dim2[downstream[0]->num_dim - 2] = downstream[0]->dim[downstream[0]->num_dim - 1];
-            dim2[downstream[0]->num_dim - 1] = downstream[0]->dim[downstream[0]->num_dim - 2];
-            Tensor* down0_T = mallocTensor(dim2, downstream[0]->num_dim, downstream[0]->device_type);
-            copyTransposeTensor(down0_T, downstream[0]);
-            // printTensor(copyTensor(makeTensorbyShape(down0_T, 0), down0_T));
-            //derivative가 없다.
-            Tensor* down_tmp0 = NULL, *down_tmp1 = NULL;
-            if(!downstream[0]->dT){//만약 x2가 deriv가 없다. 
-                addGrad(downstream[0]);
-            }else{
-                down_tmp0 = makeTensorbyShape(downstream[0], downstream[0]->device_type);
-                down_tmp0 = copyTensor_grad(down_tmp0, downstream[0]);
-                // printTensor_grad(copyTensor_grad(makeTensorbyShape(downstream[0], 0), downstream[0]));
-                // printTensor_grad(copyTensor_grad(makeTensorbyShape(down_tmp0, 0), down_tmp0));
-            }
-            if(!downstream[1]->dT){//만약 x1이 deriv가 없다.
-                addGrad(downstream[1]);
-            }else{
-                down_tmp1 = makeTensorbyShape(downstream[1], downstream[1]->device_type);
-                down_tmp1 = copyTensor_grad(down_tmp1, downstream[1]);
-            }
-
-            //@X2 = X1^T x @Y
-            matmul_grad(downstream[1], 1,
-                        down0_T, 0,
-                        up, 0);
-            //@X2 = X1^T x @Y
-            matmul_grad(downstream[0], 1,
-                        up, 0,
-                        down1_T, 0
-                        );
-            
-            if(down_tmp0){
-                
-                elementWise_Tensor(downstream[0], downstream[0], '+', down_tmp0);
-                downstream[0] = elementWise_Tensor_grad(downstream[0], GRAD_TRUE, downstream[0], GRAD_TRUE,'+' , down_tmp0, GRAD_TRUE);
-                freeTensor(down_tmp0);
-            }
-            if(down_tmp1){
-                downstream[1] = elementWise_Tensor_grad(downstream[1], GRAD_TRUE, downstream[1], GRAD_TRUE,'+' , down_tmp1, GRAD_TRUE);
-                freeTensor(down_tmp1);
-            }
-
-            freeTensor(down0_T);
-            freeTensor(down1_T);
-
-            freeTensor(up);
-        }
-    }
-};
-
-
-Tensor* makeTensorbyTransposedShape(Tensor* src, int device_type){
-    int dim[src->num_dim];
-    for(int i=0; i < src->num_dim - 2; i++){
-        dim[i] = src->dim[i];
-    }
-    dim[src->num_dim - 2] = src->dim[src->num_dim - 1];
-    dim[src->num_dim - 1] = src->dim[src->num_dim - 2];
-    return mallocTensor(dim, src->num_dim, device_type);
-}
-
-class Matmul_bias_OP:public Operation{
-public:
-    Matmul_bias_OP(Tensor* Y, Tensor* X1, Tensor* X2, Tensor* bias) : Operation(1, 3){
-        op_name = "matmul_bias";
-        upstream[0] = Y;
-        downstream[0] = X1;
-        downstream[1] = X2;
-        downstream[2] = bias;
-    }
-
-    void forward() override{
-        matmul_bias(upstream[0], downstream[0], downstream[1], downstream[2], 0);
-    }
-
-    void backward() override{
-        if(upstream[0]->dT){
-            //downstream[0] deriv
-            ///Transpose downstream[0] tmp
-            Tensor* down0_T = makeTensorbyTransposedShape(downstream[0], downstream[1]->device_type);
-            copyTransposeTensor(down0_T, downstream[0]);
-
-            //transpose downstream[1] tmp
-            Tensor* down1_T = makeTensorbyTransposedShape(downstream[1], downstream[1]->device_type);
-            copyTransposeTensor(down1_T, downstream[1]);
-
-
-            //derivative가 없을 경우 grad 저장공간 할당, 있을 경우 기존 grad를 더해준다. 
-            Tensor* down_tmp0 = NULL, *down_tmp1 = NULL, *down_tmp2 = NULL;
-            if(!downstream[0]->dT){//만약 x2가 deriv가 없다. 
-                addGrad(downstream[0]);
-            }else{
-                down_tmp0 = makeTensorbyShape(downstream[0], downstream[0]->device_type);
-                down_tmp0 = copyTensor_grad(down_tmp0, downstream[0]);
-                // printTensor_grad(copyTensor_grad(makeTensorbyShape(downstream[0], 0), downstream[0]));
-                // printTensor_grad(copyTensor_grad(makeTensorbyShape(down_tmp0, 0), down_tmp0));
-            }
-            if(!downstream[1]->dT){//만약 x1이 deriv가 없다.
-                addGrad(downstream[1]);
-            }else{
-                down_tmp1 = makeTensorbyShape(downstream[1], downstream[1]->device_type);
-                down_tmp1 = copyTensor_grad(down_tmp1, downstream[1]);
-            }
-            if(!downstream[2]->dT){//만약 x1이 deriv가 없다.
-                addGrad(downstream[2]);
-            }else{
-                down_tmp2 = makeTensorbyShape(downstream[2], downstream[2]->device_type);
-                down_tmp2 = copyTensor_grad(down_tmp2, downstream[2]);
-            }
-
-            //@X1 = @Y x X2^T
-            matmul_grad(downstream[0], 1,
-                        upstream[0], 1,
-                        down1_T, 0
-                        );
-
-            //@X2 = X1^T x @Y
-            matmul_grad(downstream[1], 1,
-                        down0_T, 0,
-                        upstream[0], 1);
-            //bias
-            // rowcolwise_sum();
-            rowcolwise_sum_grad(
-                        downstream[2], GRAD_TRUE,
-                        upstream[0], GRAD_TRUE,
-                        0
-            );
-            if(down_tmp0){
-                
-                elementWise_Tensor(downstream[0], downstream[0], '+', down_tmp0);
-                downstream[0] = elementWise_Tensor_grad(downstream[0], GRAD_TRUE, downstream[0], GRAD_TRUE,'+' , down_tmp0, GRAD_TRUE);
-                freeTensor(down_tmp0);
-            }
-            if(down_tmp1){
-                
-                downstream[1] = elementWise_Tensor_grad(downstream[1], GRAD_TRUE, downstream[1], GRAD_TRUE,'+' , down_tmp1, GRAD_TRUE);
-                freeTensor(down_tmp1);
-            }
-            if(down_tmp2){
-                
-                downstream[2] = elementWise_Tensor_grad(downstream[2], GRAD_TRUE, downstream[2], GRAD_TRUE,'+' , down_tmp2, GRAD_TRUE);
-                freeTensor(down_tmp2);
-            }
-
-            freeTensor(down0_T);
-            freeTensor(down1_T);
-        }
-        // else{
-        //     Tensor*up = makeTensorbyShape(upstream[0], upstream[0]->device_type);
-        //     // 1로 채운 upstream 크기의 Tensor
-        //     if(up->device_type)
-        //         reset_Tensor(up, 1);
-        //     else{
-        //         for(int i=0; i < up->sizeTensor; i++)
-        //             up->T[i] = 1;
-        //     }
-            
-
-        //     //////////////Transpose downstream////////////////
-            
-        //     ///Transpose downstream[0] tmp
-        //     Tensor* down0_T = makeTensorbyTransposedShape(downstream[0], downstream[1]->device_type);
-        //     copyTransposeTensor(down0_T, downstream[0]);
-
-        //     //transpose downstream[1] tmp
-        //     Tensor* down1_T = makeTensorbyTransposedShape(downstream[1], downstream[1]->device_type);
-        //     copyTransposeTensor(down1_T, downstream[1]);
-
-        //     // printTensor(copyTensor(makeTensorbyShape(down0_T, 0), down0_T));
-        //     //derivative가 없다.
-            
-        //     //derivative가 없을 경우 grad 저장공간 할당, 있을 경우 기존 grad를 더해준다. 
-        //     Tensor* down_tmp0 = NULL, *down_tmp1 = NULL, *down_tmp2 = NULL;
-        //     if(!downstream[0]->dT){//만약 x2가 deriv가 없다. 
-        //         addGrad(downstream[0]);
-        //     }else{
-        //         down_tmp0 = makeTensorbyShape(downstream[0], downstream[0]->device_type);
-        //         down_tmp0 = copyTensor_grad(down_tmp0, downstream[0]);
-        //         // printTensor_grad(copyTensor_grad(makeTensorbyShape(downstream[0], 0), downstream[0]));
-        //         // printTensor_grad(copyTensor_grad(makeTensorbyShape(down_tmp0, 0), down_tmp0));
-        //     }
-        //     if(!downstream[1]->dT){//만약 x1이 deriv가 없다.
-        //         addGrad(downstream[1]);
-        //     }else{
-        //         down_tmp1 = makeTensorbyShape(downstream[1], downstream[1]->device_type);
-        //         down_tmp1 = copyTensor_grad(down_tmp1, downstream[1]);
-        //     }
-        //     if(!downstream[2]->dT){//만약 x1이 deriv가 없다.
-        //         addGrad(downstream[2]);
-        //     }else{
-        //         down_tmp2 = makeTensorbyShape(downstream[2], downstream[2]->device_type);
-        //         down_tmp2 = copyTensor_grad(down_tmp1, downstream[2]);
-        //     }
-
-        //     //@X2 = X1^T x @Y
-        //     matmul_grad(downstream[1], 1,
-        //                 down0_T, 0,
-        //                 up, 0);
-        //     //@X2 = X1^T x @Y
-        //     matmul_grad(downstream[0], 1,
-        //                 up, 0,
-        //                 down1_T, 0
-        //                 );
-            
-        //     if(down_tmp0){
-        //         elementWise_Tensor(downstream[0], downstream[0], '+', down_tmp0);
-        //         downstream[1] = elementWise_Tensor_grad(downstream[0], GRAD_TRUE, downstream[0], GRAD_TRUE,'+' , down_tmp0, GRAD_TRUE);
-        //         freeTensor(down_tmp0);
-        //     }
-        //     if(down_tmp1){
-        //         downstream[1] = elementWise_Tensor_grad(downstream[1], GRAD_TRUE, downstream[1], GRAD_TRUE,'+' , down_tmp1, GRAD_TRUE);
-        //         freeTensor(down_tmp1);
-        //     }
-
-        //     freeTensor(down0_T);
-        //     freeTensor(down1_T);
-
-        //     freeTensor(up);
-        // }
-    }
-};
-
-
-
-
-
-//////////////////////////////////model/////////////////////////////////
-
-class ReLU_OP:public Operation{
-Tensor* mask;
-public:
-    ReLU_OP(Tensor* X) : Operation(1, 1){
-        op_name = "ReLU";
-        upstream[0] = X;
-        downstream[0] = X;
-        mask = makeTensorbyShape(X, 1);
-    }
-    void forward() override{
-        downstream[0] = ReLU_inline(downstream[0]);
-        copyTensor(mask, downstream[0]);
-        // printTensor(copyTensor(makeTensorbyShape(mask, 0), mask));//======================================
-    }
-    
-    
-    void backward() override{
-        //dB로 비교를 한다. 
-        // 미분 값이 없으면 미분을 하면 안된다. 
-        if(downstream[0]->dT){//만약 x1의 deriv가 없다면 derivative는 없다.
-            
-            // printTensor_grad(copyTensor_grad(makeTensorbyShape(downstream[0], 0), downstream[0]));
-            elementWise_Tensor_grad(downstream[0], GRAD_TRUE, upstream[0], GRAD_TRUE, 'm', mask, GRAD_FALSE);
-            // printTensor_grad(copyTensor_grad(makeTensorbyShape(downstream[0], 0), downstream[0]));
-            // printTensor(copyTensor(makeTensorbyShape(mask, 0), mask));//=============================
-        }
-    }
-    
-    ~ReLU_OP() override{
-        freeTensor(mask);
-    }
-
-};
-
-
-class Sum_OP:public Operation{
-public:
-    Sum_OP(Tensor* Y, Tensor* X):Operation(1,1){
-        downstream[0] = X;
-        upstream[0] = Y;
-    }
-    void forward() override{
-
-    }
-    void backward() override{
-        if(!downstream[0]->dT){
-            addGrad(downstream[0]);
-            float* tmp = downstream[0]->T;
-            downstream[0]->T = downstream[0]->dT;
-            reset_Tensor(downstream[0], 1);
-            downstream[0]->dT = downstream[0]->T;
-            downstream[0]->T = tmp;
-        }
-    }
-};
-
-class CE_OP:public Operation{
-public:
-    CE_OP(Tensor* O, Tensor*Y):Operation(1, 1){
-        op_name = "Cross-Entropy";
-        downstream[0] = O;
-        upstream[0] = Y;
-    }
-    void forward() override{
-        softMax(downstream[0], downstream[0]);
-        // cout << "loss" << endl;
-    }
-    void backward() override{
-        if(!downstream[0]->dT){
-            addGrad(downstream[0]);
-        }        
-        elementWise_Tensor_grad_2(
-            downstream[0], GRAD_TRUE,
-            downstream[0], GRAD_FALSE,
-            '-',
-            upstream[0], GRAD_FALSE
-        );
-    }
-};
-
-class Model{
-public:
-    Operation** operations;
-    int op_len;
-    Tensor** datas;
-    int data_len;
-    Model(){
-        operations = nullptr;
-        op_len = 0;
-        datas = 0;
-        datas = nullptr;
-        data_len = 0;
-    }
-
-    void addOperation(Operation* op){
-        if(op == nullptr){
-            cout << "Model : op Not Appropriate" << endl;
-        }
-        if(op_len % 10 == 0){
-            Operation** op_tmp = operations;
-            operations = (Operation**)malloc(sizeof(Operation*) * (op_len + 10));
-            for(int i=0; i < op_len; i++){
-                operations[i] = op_tmp[i];
-            }
-            free(op_tmp);
-        }
-        operations[op_len] = op;
-        op_len++;
-
-        for(int i=0; i < op->upstream_len; i++){
-            char flag = 1;
-            for(int j=0; j < data_len; j++){
-                if(datas[j] == op->upstream[i]){
-                    flag = 0;
-                    break;
-                }
-            }
-            if(flag){
-                if(data_len % 10 ==0){
-                    Tensor** tmp = datas;
-                    datas = (Tensor**)malloc(sizeof(Tensor*) * (data_len + 10));
-                    for(int k=0; k < data_len; k++){
-                        datas[k] = tmp[k];
-                    }
-                    free(tmp);
-                }
-                datas[data_len] = op->upstream[i];
-                data_len++;
-            }
-        }
-        for(int i=0; i<op->downstream_len; i++){
-            char flag = 1;
-            for(int j=0; j < data_len; j++){
-                if(datas[j] == op->downstream[i]){
-                    flag = 0;
-                    break;
-                }
-            }
-            if(flag){
-                if(data_len % 10 ==0){
-                    Tensor** tmp = datas;
-                    datas = (Tensor**)malloc(sizeof(Tensor*) * (data_len + 10));
-                    for(int k=0; k < data_len; k++){
-                        datas[k] = tmp[k];
-                    }
-                    free(tmp);
-                }
-                datas[data_len] = op->downstream[i];
-                data_len++;
-            }
-        }
-    }
-
-    void forward(){
-        if(operations != nullptr){
-            for(int i=0; i < op_len; i++){
-                operations[i]->forward();
-            }
-        }
-    }
-    void backward(){
-        if(operations != nullptr){
-            for(int i = op_len-1; i >= 0; i--){
-                // cout << operations[i]->getOpname() << endl;
-                operations[i]->backward();
-            }
-        }
-    }
-    void update(){
-        for(int i = 0; i < data_len; i++){
-            if(datas[i])
-                updateTensor(datas[i], 0.001);
-        }
-    }
-    void printModel(){
-        for(int i=0; i < op_len; i++){
-            cout <<i<<" : "<< operations[i]->op_name << endl;
-        }
-    }
-};
-
-
-
-Tensor* dummyTensor(Tensor *ten){
-    for(int i=0; i < ten->sizeTensor; i++){
-        ten->T[i] = 0.0001 * i - 25/2;
-    }
-    return ten;
-}
-Tensor* dummyTensor2(Tensor *ten){
-    for(int i=0; i < ten->sizeTensor; i++){
-        ten->T[i] = (i % ten->stride[0] == 1) ? 1 : 0;
-    }
-    return ten;
-}
 int main(){
-    Tensor* A = dummyTensor(makeTensor("728 728", 0));
-    Tensor* B = dummyTensor(makeTensor("728 30", 0));
-    Tensor* dA = copyTensor(makeTensorbyShape(A, 1), A);
-    Tensor* dB = copyTensor(makeTensorbyShape(B, 1), B);
-    Tensor* bias = dummyTensor(makeTensor("30", 0));
-    Tensor* dBias = copyTensor(makeTensorbyShape(bias, 1), bias);
-    Tensor* C = makeTensor("728 30", 0);
-    Tensor* D = makeTensor("728 30", 0);
-    Tensor* Y = dummyTensor2(makeTensor("728 30", 0));
-    Tensor* dY = copyTensor(makeTensorbyShape(Y, 1), Y);
-    Tensor* dC = makeTensorbyShape(C, 1);
-    Tensor* dD = makeTensorbyShape(D, 1);
+
+    //GPU memory
+    int batch_size = 32;
+    int input_dim = 784; // 28x28
+    int layer_dim[5] = {784, 50, 30, 40, 10};
+
+    int in_dim[2];
+
+    // Host Tensors
+    in_dim[0] = batch_size;
+    in_dim[1] = input_dim;
+    Tensor* input = mallocTensor(in_dim, 2, 0); // CPU
+
+    in_dim[0] = batch_size;
+    Tensor* label = mallocTensor(in_dim, 1, 0); // CPU
+    
+    // Device Tensors
+    in_dim[0] = batch_size;
+    in_dim[1] = input_dim;
+    Tensor* d_input = mallocTensor(in_dim, 2, 1); // GPU
+    
+    in_dim[0] = batch_size;
+    Tensor* d_label = mallocTensor(in_dim, 1, 1); // GPU
+
+    Tensor* d_W[4];
+    Tensor* d_b[4];
+    Tensor* d_A[5]; // Activations
+    d_A[0] = d_input;
 
     Model m1;
-    m1.addOperation(new Matmul_bias_OP(dC, dA, dB, dBias));
-    m1.addOperation(new ReLU_OP(dC));
-    m1.addOperation(new Matmul_OP(dD, dA, dC));
-    m1.addOperation(new CE_OP(dD, dY));
     
-    for(int i=0; i < 2; i++){
-        m1.forward();
-        m1.backward();
-        m1.update();
+    srand(time(NULL));
+
+    for(int i=0; i < 4; i++){
+        // Weight: [in_dim, out_dim] -> [784, 50]
+        in_dim[0] = layer_dim[i];
+        in_dim[1] = layer_dim[i+1];
+        d_W[i] = mallocTensor(in_dim, 2, 1);
+        d_W[i]->isParam = 1;
+
+        // Init Weight (Load from file to match nn.cu)
+        char file_name[50];
+        file_name[0] = 2*i + '0';
+        strcpy(file_name+1, "_init_blocks.bin");
+        // We need a host tensor to load into first? copyTensorfromFILE reads into dst->T. 
+        // dst must be CPU tensor.
+        Tensor* w_temp = mallocTensor(in_dim, 2, 0); 
+        copyTensorfromFILE(w_temp, file_name);
+        copyTensor(d_W[i], w_temp); // Copy to Device
+        freeTensor(w_temp);
+
+        // Bias: [out_dim]
+        in_dim[0] = layer_dim[i+1];
+        d_b[i] = mallocTensor(in_dim, 1, 1);
+        d_b[i]->isParam = 1;
+        
+        // Init Bias (Load from file)
+        file_name[0] = 2*i+1 + '0';
+        strcpy(file_name+1, "_init_blocks.bin");
+        Tensor* b_temp = mallocTensor(in_dim, 1, 0);
+        copyTensorfromFILE(b_temp, file_name);
+        copyTensor(d_b[i], b_temp);
+        freeTensor(b_temp);
+
+        // Activation for next layer: [batch_size, out_dim]
+        in_dim[0] = batch_size;
+        in_dim[1] = layer_dim[i+1];
+        d_A[i+1] = mallocTensor(in_dim, 2, 1);
+        
+        m1.addOperation(new Matmul_bias_OP(d_A[i+1], d_A[i], d_W[i], d_b[i]));
+        
+        if(i < 3){
+             m1.addOperation(new ReLU_OP(d_A[i+1]));
+        }
+    }
+    
+    // Output tensor (last activation)
+    m1.addOperation(new CE_OP(d_A[4], d_label));
+
+    //==============================TRAIN===========================================
+    // For calculating accuracy on CPU, we need O on CPU
+    in_dim[0] = batch_size;
+    in_dim[1] = layer_dim[4];
+    Tensor* O = mallocTensor(in_dim, 2, 0);
+
+    FILE * data_file, *label_file;
+    float learning_rate = 0.0001;
+    
+    printf("Start Training\n");
+
+    for(int iter=0; iter < 30; iter++){//iteration
+
+        data_file = LoaderINIT("data_norm.bin");
+        label_file = LoaderINIT("label.bin");
+
+        double loss = 0;
+        int accuracy = 0; // Total correct predictions
+        
+        int num_batches = 60000/batch_size;
+        
+        for(int batch=0; batch < num_batches; batch++){//batch
+            m1.zero_grad();
+            // Load Data
+            copyTensor(d_input, LoaderNEXT(input, data_file));
+            copyTensor(d_label, LoaderNEXT(label, label_file));
+
+            m1.forward();
+            
+            // Calculate Loss/Accuracy
+            copyTensor(O, d_A[4]);
+            
+            loss += CrossEntropyLoss(O, label);
+            
+            // Calculate Accuracy
+            accuracy += accuracy_CPU(O, label);
+            
+            float current_acc = (float)accuracy / ((batch + 1) * batch_size) * 100;
+
+            m1.backward();
+            
+            if(batch < 50000/batch_size){ // Training phase
+                m1.update(learning_rate);
+            }
+            
+            print_progress(batch, num_batches, current_acc);
+        }
+        printf("\nIteration: %d, Loss: %.4f, Accuracy: %.2f%%\n", iter, loss/num_batches, (float)accuracy/60000 * 100);
+        LoaderCLOSE(data_file);
+        LoaderCLOSE(label_file);
     }
 
-
-    
-    // printTensor(copyTensor_grad(D, dD));
-    // printTensor_grad(D);
-    
-    // m1.update();
-    
-
-    
-    // cout << dC << dA << dB << endl;
-    // m1.operations[0]->forward();
-    // // m1.operations[1]->forward();
-    // m1.operations[2]->forward();
-
-    // m1.operations[2]->backward();
-    // // m1.operations[1]->backward();
-    // m1.operations[0]->backward();
-
-    // printTensor(copyTensor(makeTensorbyShape(dC, 0), elementWise_Tensor(dC, dB,'m' ,dA)));
-    // printTensor_grad(copyTensor_grad(A, dA));
-    // printTensor_grad(copyTensor_grad(B, dB));
-    // printTensor_grad(copyTensor_grad(bias, dBias));
-    // printTensor_grad(copyTensor_grad(C, dC));
-    // cout << "asdf" << endl;
-    // printTensor(copyTensor(C, dC));
-    
+    return 0;
 }

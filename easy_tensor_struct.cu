@@ -56,6 +56,7 @@ Tensor *mallocTensor(int *dim, int num_dim, int device_type){
         cudaMemcpy(ten->d_dim_stride, ten->dim, 2 * num_dim * sizeof(int), cudaMemcpyHostToDevice);
     }
     ten->isSub = 0;
+    ten->isParam = 0;
     ten->dT = NULL;
     return ten;
 }
@@ -2304,4 +2305,166 @@ Tensor* updateTensor(Tensor* ten, float learning_rate){
         update_add_<<< (ten->sizeTensor + s_tile_SIZE - 1)/s_tile_SIZE, s_tile_SIZE >>>(ten->T, ten->dT, learning_rate, ten->sizeTensor);
     cudaMemset(ten->dT, 0, ten->sizeTensor * sizeof(float));
     return ten;
+}
+
+void print_progress(int count, int max, float acc) {
+    const int bar_width = 50;
+
+    float progress = (float) count / max;
+    int bar_length = progress * bar_width;
+
+    printf("\rProgress: [");
+    for (int i = 0; i < bar_length; ++i) {
+        printf("#");
+    }
+    for (int i = bar_length; i < bar_width; ++i) {
+        printf(" ");
+    }
+    printf("] %d / %d | Acc: %.2f%%", count, max, acc);
+
+    fflush(stdout);
+}
+
+int accuracy_CPU(Tensor* O, Tensor* Y){
+    if(!O || !Y){
+        printf("no Tensor\n");
+        return -1;
+    }
+    if(O->device_type||Y->device_type){
+        printf("CPU ONLY\n");
+        return -1;
+    }
+    if(O->num_dim !=2 || Y->num_dim != 1){
+        printf("not an appropriate shape.\n");
+        return -1;
+    }
+    if(O->dim[0] != Y->dim[0]){ //batch 비교
+        printf("batch size does not match.\n");
+        return -1;
+    }
+    int acc = 0;
+    for(int i=0; i < O->dim[0]; i++){
+        int max_inx = 0;
+        for(int j=1; j < O->dim[1]; j++){
+            if (O->T[i * O->stride[0] + j] > O->T[i * O->stride[0] + max_inx]){
+                max_inx = j;
+            }
+
+        }
+        if(max_inx == Y->T[i]){
+            acc++;
+        }
+    }
+    return acc;
+}
+
+Tensor* copyTensorfromFILE(Tensor* dst, const char* file_name){
+    char f_name[50] = "./weight/";
+    int len = strlen(f_name);
+    int i;
+    for(i=0; file_name[i]; i++){
+        f_name[i+len] = file_name[i];
+    }
+    f_name[i+len] = '\0';
+    
+    FILE *file = fopen(f_name, "rb");
+    if (!file) {
+        printf("Error opening file: %s\n", f_name);
+        return NULL;
+    }
+
+    size_t num_elements = fread(dst->T, sizeof(float), dst->dim[0]*dst->stride[0], file);
+    if (num_elements != dst->dim[0]*dst->stride[0]) {
+        printf("Error reading file\n");
+        return NULL;
+    }
+
+    fclose(file);
+
+    return dst;
+}
+
+///////////////////////////DATALOADER///////////////////////////////////
+FILE* LoaderINIT(const char* file_name){
+    char f_name[50] = "./data/";
+    int len = strlen(f_name);
+    int i;
+    for(i=0; file_name[i]; i++){
+        f_name[i+len] = file_name[i];
+    }
+    f_name[i+len] = '\0';
+    
+    FILE *file = fopen(f_name, "rb");
+    if (!file) {
+        printf("Error opening file: %s\n", f_name);
+        return NULL;
+    }
+    return file;
+}
+
+Tensor* LoaderNEXT(Tensor* dst, FILE*file){
+    if(dst->device_type){
+        printf("Tensor must be on CPU\n");
+        return NULL;
+    }
+    size_t num_elements = fread(dst->T, sizeof(float), dst->sizeTensor, file);
+    if (num_elements != dst->sizeTensor) {
+        printf("Error reading file or End of File\n");
+        return NULL;
+    }
+    return dst;
+}
+
+void LoaderCLOSE(FILE* file){
+    fclose(file);
+}
+
+///O->[batch_size label_len] Y->[batchsize]
+float CrossEntropyLoss(Tensor* CPU_O, Tensor* CPU_Y){
+    if(!CPU_O||!CPU_Y){
+        printf("no Tensor.\n");
+        return -1;
+    }
+    if(CPU_O->device_type || CPU_Y->device_type){
+        printf("Tensor should be on CPU.\n");
+        return -1;
+    }
+    if(CPU_O->dim[0] != CPU_Y->sizeTensor){
+        printf("batch does not match.\n");
+        return -1;
+    }
+    double loss = 0;
+    for(int i=0; i < CPU_Y->sizeTensor;i++){
+        loss -= log(CPU_O->T[CPU_O->stride[0]*i + (int)CPU_Y->T[i]]);
+    }
+    return loss/CPU_Y->sizeTensor;
+}
+
+__global__ void CESoftmax_deriv_(float* deriv, float* O, float* label, int O_stride, int batch_size){
+    int inx = blockDim.x * blockIdx.x + threadIdx.x;//each batch
+    if(inx < batch_size){
+        for(int i=0; i < O_stride;i++){
+            if(i == label[inx])
+                deriv[O_stride * inx + i] = O[O_stride * inx + i] - 1;
+            else
+                deriv[O_stride * inx + i] = O[O_stride * inx + i];
+        }
+    }
+}
+Tensor* CESoftmax_deriv(Tensor* d_der_O, Tensor*d_O, Tensor* d_Y){
+    if(!d_der_O || !d_O || !d_Y){
+        printf("CES: no Tensor.\n");
+        return NULL;
+    }
+    if(d_O->dim[0] != d_Y->sizeTensor){
+        printf("batch does not match.\n");
+        return NULL;
+    }
+    if(d_der_O->num_dim != d_O->num_dim){
+        printf("dimention does not match.\n");
+        return NULL;
+    }
+    cudaSetDevice(d_der_O->device_type-1);
+    CESoftmax_deriv_<<<(d_der_O->dim[d_der_O->num_dim - 2] + tile_SIZE - 1)/tile_SIZE, tile_SIZE>>>(d_der_O->T,d_O->T, d_Y->T, d_der_O->dim[d_der_O->num_dim - 1], d_der_O->dim[d_der_O->num_dim - 2]);
+    return d_der_O;
 }

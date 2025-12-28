@@ -84,6 +84,22 @@ Tensor* elementWise_Tensor_grad_2(Tensor*dC,char dC_Grad, Tensor* dA,char dA_Gra
 Tensor* rowcolwise_sum_grad(Tensor*dst,int dst_Grad, Tensor*src,int src_Grad, char axis);
 
 Tensor* updateTensor(Tensor* ten, float learning_rate);
+Tensor* updateTensor(Tensor* ten, float learning_rate);
+
+// Helper Functions
+void print_progress(int count, int max, float acc);
+int accuracy_CPU(Tensor* O, Tensor* Y);
+Tensor* copyTensorfromFILE(Tensor* dst, const char* file_name);
+
+// Data Loader
+FILE* LoaderINIT(const char* file_name);
+Tensor* LoaderNEXT(Tensor* dst, FILE*file);
+void LoaderCLOSE(FILE* file);
+
+// Loss
+float CrossEntropyLoss(Tensor* CPU_O, Tensor* CPU_Y);
+Tensor* CESoftmax_deriv(Tensor* d_der_O, Tensor*d_O, Tensor* d_Y);
+
 #endif // TENSOR_H
 
 //주의할 점. 
