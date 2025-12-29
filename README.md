@@ -25,7 +25,6 @@
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/8.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/9.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/10.JPG?raw=true)
-![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/10.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/11.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/12.JPG?raw=true)
 ![alt text](https://github.com/kylekim00/Easy_Tensor/blob/main/CAPSTONE/13.JPG?raw=true)
