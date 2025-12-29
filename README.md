@@ -1,7 +1,5 @@
 # Easy_Tensor_Model
 
-### Auto Backpropagation in progress
-
 <hr/>
 
 ## Description
